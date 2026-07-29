@@ -69,6 +69,7 @@ def main():
                 "alt_baro": a.get("alt_baro"),
                 "gs": a.get("gs"),
                 "track": a.get("track"),
+                "dbFlags": a.get("dbFlags"),
             }
             for a in aircraft
             if isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float))
