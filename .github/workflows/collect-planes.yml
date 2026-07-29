@@ -2,9 +2,9 @@ name: Collecte avions (48h)
 
 on:
   schedule:
-    # Toutes les 15 minutes. GitHub ne garantit pas la ponctualité exacte
+    # Toutes les 5 minutes. GitHub ne garantit pas la ponctualité exacte
     # (peut être retardé de quelques minutes selon la charge de leurs serveurs).
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {} # permet aussi de le lancer manuellement pour tester
 
 permissions:
