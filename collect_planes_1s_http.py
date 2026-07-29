@@ -75,7 +75,7 @@ def fetch_met_no_wind():
 EUMETSAT_CONSUMER_KEY = os.environ.get("EUMETSAT_CONSUMER_KEY", "")
 EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET", "")
 EUMETSAT_TOKEN_URL = "https://api.eumetsat.int/token"
-EUMETSAT_BROWSE_URL = "https://api.eumetsat.int/data/browse/1.0.0/search"
+EUMETSAT_BROWSE_URL = "https://api.eumetsat.int/data/search-products/1.0.0/os"  # OpenSearch — confirmé sans authentification requise
 EUMETSAT_DOWNLOAD_BASE = "https://api.eumetsat.int/data/download/collections"
 EUMETSAT_COLLECTION_ID = "EO:EUM:DAT:MSG:FIR"  # Active Fire Monitoring - MSG - 0 degree
 EUMETSAT_BBOX = "-5.5,41,10,51.5"  # même emprise que FRANCE_BBOX (west,south,east,north)
@@ -184,13 +184,15 @@ def fetch_eumetsat_fires():
     if _eumetsat_fires_cache["data"] is not None and now - _eumetsat_fires_cache["fetched_at"] < EUMETSAT_CACHE_SECONDS:
         return _eumetsat_fires_cache["data"]
 
-    token = get_eumetsat_token()
-
+    # L'API OpenSearch ne nécessite pas d'authentification (confirmé par la documentation
+    # EUMETSAT) — seul le téléchargement du produit en a besoin. Paramètres volontairement
+    # limités à ceux confirmés (pi, bbox, format) : les autres (tri, pagination) n'ont pas pu
+    # être vérifiés avant déploiement et risquaient de provoquer une autre erreur 404/400.
     search_url = (
         f"{EUMETSAT_BROWSE_URL}?format=json&pi={urllib.parse.quote(EUMETSAT_COLLECTION_ID)}"
-        f"&bbox={EUMETSAT_BBOX}&si=0&c=1&sort=start,time,0"
+        f"&bbox={EUMETSAT_BBOX}"
     )
-    sreq = urllib.request.Request(search_url, headers={"Authorization": f"Bearer {token}"})
+    sreq = urllib.request.Request(search_url)
     search_raw = eumetsat_request(sreq, 15, "recherche")
     search_result = json.loads(search_raw.decode("utf-8"))
 
@@ -201,10 +203,19 @@ def fetch_eumetsat_fires():
         _eumetsat_fires_cache["fetched_at"] = now
         return result
 
+    # Pas de tri serveur confirmé : on prend l'entrée la plus récente selon la date de
+    # publication/acquisition présente dans les propriétés (le nom exact du champ peut varier
+    # selon la collection, plusieurs candidats sont donc essayés).
+    def feature_time(f):
+        props = f.get("properties", {})
+        return props.get("date") or props.get("published") or props.get("updated") or ""
+    features.sort(key=feature_time, reverse=True)
+
     latest = features[0]
     product_id = latest["properties"]["identifier"]
-    product_time = latest["properties"].get("date")
+    product_time = feature_time(latest)
 
+    token = get_eumetsat_token()
     download_url = f"{EUMETSAT_DOWNLOAD_BASE}/{urllib.parse.quote(EUMETSAT_COLLECTION_ID, safe='')}/products/{urllib.parse.quote(product_id, safe='')}"
     dreq = urllib.request.Request(download_url, headers={"Authorization": f"Bearer {token}"})
     raw = eumetsat_request(dreq, 20, "téléchargement")
