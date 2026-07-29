@@ -10,6 +10,7 @@ par raw.githubusercontent.com sur les URLs GitHub.
 Endpoints :
   GET /recent  -> liste JSON des instantanés des 10 dernières minutes (mémoire, pas de cache)
   GET /latest  -> le tout dernier instantané uniquement
+  GET /wind    -> vent ponctuel via met.no (repli indépendant d'Open-Meteo, mis en cache 30 min)
 
 À lancer comme service systemd (voir instructions fournies séparément).
 """
@@ -34,6 +35,35 @@ BATCH_SECONDS = 3       # regroupe les commits/push GitHub
 IN_MEMORY_WINDOW_SECONDS = 10 * 60  # 10 min gardées en mémoire pour le serveur HTTP direct
 HTTP_PORT = 8080
 
+MET_NO_LAT = 44.84
+MET_NO_LON = -0.58
+MET_NO_USER_AGENT = "fire-map-personal-project (contact: yann4023@hotmail.com)"
+MET_NO_CACHE_SECONDS = 30 * 60  # 30 min : les prévisions met.no ne changent pas assez vite pour justifier plus fréquent
+
+_wind_cache = {"data": None, "fetched_at": 0}
+
+
+def fetch_met_no_wind():
+    now = time.time()
+    if _wind_cache["data"] is not None and now - _wind_cache["fetched_at"] < MET_NO_CACHE_SECONDS:
+        return _wind_cache["data"]
+
+    url = f"https://api.met.no/weatherapi/locationforecast/2.0/compact?lat={MET_NO_LAT}&lon={MET_NO_LON}"
+    req = urllib.request.Request(url, headers={"User-Agent": MET_NO_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+
+    instant = payload["properties"]["timeseries"][0]["data"]["instant"]["details"]
+    result = {
+        "speed_ms": instant.get("wind_speed"),
+        "direction_deg": instant.get("wind_from_direction"),
+        "updated_at": int(now),
+    }
+    _wind_cache["data"] = result
+    _wind_cache["fetched_at"] = now
+    return result
+
+
 # --- État partagé entre la boucle de collecte et le serveur HTTP ---
 lock = threading.Lock()
 recent_snapshots = []  # liste des instantanés des IN_MEMORY_WINDOW_SECONDS dernières secondes
@@ -56,6 +86,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(snapshots[-1] if snapshots else {})
         elif self.path.startswith("/recent"):
             self._send_json(snapshots)
+        elif self.path.startswith("/wind"):
+            try:
+                self._send_json(fetch_met_no_wind())
+            except Exception as e:
+                print(f"Erreur proxy met.no : {e}")
+                self.send_response(502)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -66,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def run_http_server():
     server = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler)
-    print(f"Serveur HTTP direct démarré sur le port {HTTP_PORT} (/recent, /latest)")
+    print(f"Serveur HTTP direct démarré sur le port {HTTP_PORT} (/recent, /latest, /wind)")
     server.serve_forever()
 
 
