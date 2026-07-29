@@ -22,6 +22,9 @@ import subprocess
 import threading
 import urllib.request
 import urllib.error
+import urllib.parse
+import base64
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LAT = 44.84
@@ -64,6 +67,138 @@ def fetch_met_no_wind():
     return result
 
 
+# --- EUMETSAT / Meteosat détection rapide (Active Fire Monitoring, MSG - 0 degré) ---
+# Complète NASA FIRMS (VIIRS/MODIS, 2-4 passages/jour) avec un satellite géostationnaire :
+# résolution plus grossière (~3-4 km/pixel) mais cycle de répétition bien plus rapide (5-15 min).
+# Remplace TON_CONSUMER_KEY / TON_CONSUMER_SECRET par les identifiants récupérés sur
+# https://api.eumetsat.int/api-key/ avant de déployer.
+EUMETSAT_CONSUMER_KEY = "TON_CONSUMER_KEY"
+EUMETSAT_CONSUMER_SECRET = "TON_CONSUMER_SECRET"
+EUMETSAT_TOKEN_URL = "https://api.eumetsat.int/token"
+EUMETSAT_BROWSE_URL = "https://api.eumetsat.int/data/browse/1.0.0/search"
+EUMETSAT_DOWNLOAD_BASE = "https://api.eumetsat.int/data/download/collections"
+EUMETSAT_COLLECTION_ID = "EO:EUM:DAT:MSG:FIR"  # Active Fire Monitoring - MSG - 0 degree
+EUMETSAT_BBOX = "-5.5,41,10,51.5"  # même emprise que FRANCE_BBOX (west,south,east,north)
+EUMETSAT_CACHE_SECONDS = 5 * 60  # produit généré toutes les ~15 min ; 5 min de cache est prudent
+
+_eumetsat_token_cache = {"token": None, "expires_at": 0}
+_eumetsat_fires_cache = {"data": None, "fetched_at": 0}
+
+
+def get_eumetsat_token():
+    now = time.time()
+    # Marge de 60s avant l'expiration réelle pour éviter d'utiliser un jeton tout juste périmé.
+    if _eumetsat_token_cache["token"] and now < _eumetsat_token_cache["expires_at"] - 60:
+        return _eumetsat_token_cache["token"]
+
+    credentials = base64.b64encode(f"{EUMETSAT_CONSUMER_KEY}:{EUMETSAT_CONSUMER_SECRET}".encode()).decode()
+    req = urllib.request.Request(
+        EUMETSAT_TOKEN_URL,
+        data=b"grant_type=client_credentials",
+        headers={"Authorization": f"Basic {credentials}", "Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    _eumetsat_token_cache["token"] = payload["access_token"]
+    _eumetsat_token_cache["expires_at"] = now + payload.get("expires_in", 3600)
+    return _eumetsat_token_cache["token"]
+
+
+def parse_cap_polygon(text):
+    if not text:
+        return None
+    coords = []
+    for pair in text.strip().split():
+        try:
+            lat, lon = pair.split(",")
+            coords.append([float(lat), float(lon)])
+        except ValueError:
+            continue
+    return coords if len(coords) >= 3 else None
+
+
+def parse_cap_circle(text):
+    if not text:
+        return None
+    try:
+        point, radius = text.strip().split()
+        lat, lon = point.split(",")
+        return {"lat": float(lat), "lon": float(lon), "radius_km": float(radius)}
+    except ValueError:
+        return None
+
+
+def parse_cap_fires(raw_bytes):
+    """Extrait les zones de feu d'un fichier CAP (Common Alert Protocol, XML, standard OASIS 1.2).
+    Analyse défensive : le schéma exact de ce produit précis n'a pas pu être vérifié avant
+    déploiement (compte EUMETSAT créé pendant cette session) — si rien n'est trouvé, un message
+    est journalisé pour faciliter l'ajustement une fois un vrai fichier observé."""
+    fires = []
+    try:
+        root = ET.fromstring(raw_bytes)
+    except ET.ParseError as e:
+        print(f"CAP EUMETSAT : échec de parsing XML ({e}) — le fichier n'est peut-être pas au format attendu.")
+        return fires
+
+    ns = {"cap": "urn:oasis:names:tc:emergency:cap:1.2"}
+    for info in root.findall(".//cap:info", ns):
+        headline = info.findtext("cap:headline", default="", namespaces=ns)
+        severity = info.findtext("cap:severity", default="", namespaces=ns)
+        for area in info.findall("cap:area", ns):
+            area_desc = area.findtext("cap:areaDesc", default="", namespaces=ns)
+            for poly_el in area.findall("cap:polygon", ns):
+                coords = parse_cap_polygon(poly_el.text)
+                if coords:
+                    fires.append({"type": "polygon", "coords": coords, "headline": headline, "severity": severity, "areaDesc": area_desc})
+            for circle_el in area.findall("cap:circle", ns):
+                cr = parse_cap_circle(circle_el.text)
+                if cr:
+                    fires.append({"type": "circle", **cr, "headline": headline, "severity": severity, "areaDesc": area_desc})
+
+    if not fires:
+        print("CAP EUMETSAT : aucune zone de feu trouvée dans ce cycle (normal si pas de détection en cours, ou schéma CAP à ajuster).")
+    return fires
+
+
+def fetch_eumetsat_fires():
+    now = time.time()
+    if _eumetsat_fires_cache["data"] is not None and now - _eumetsat_fires_cache["fetched_at"] < EUMETSAT_CACHE_SECONDS:
+        return _eumetsat_fires_cache["data"]
+
+    token = get_eumetsat_token()
+
+    search_url = (
+        f"{EUMETSAT_BROWSE_URL}?format=json&pi={urllib.parse.quote(EUMETSAT_COLLECTION_ID)}"
+        f"&bbox={EUMETSAT_BBOX}&si=0&c=1&sort=start,time,0"
+    )
+    sreq = urllib.request.Request(search_url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(sreq, timeout=15) as sresp:
+        search_result = json.loads(sresp.read().decode("utf-8"))
+
+    features = search_result.get("features", [])
+    if not features:
+        result = {"fires": [], "product_time": None}
+        _eumetsat_fires_cache["data"] = result
+        _eumetsat_fires_cache["fetched_at"] = now
+        return result
+
+    latest = features[0]
+    product_id = latest["properties"]["identifier"]
+    product_time = latest["properties"].get("date")
+
+    download_url = f"{EUMETSAT_DOWNLOAD_BASE}/{urllib.parse.quote(EUMETSAT_COLLECTION_ID, safe='')}/products/{urllib.parse.quote(product_id, safe='')}"
+    dreq = urllib.request.Request(download_url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(dreq, timeout=20) as dresp:
+        raw = dresp.read()
+
+    fires = parse_cap_fires(raw)
+    result = {"fires": fires, "product_time": product_time}
+    _eumetsat_fires_cache["data"] = result
+    _eumetsat_fires_cache["fetched_at"] = now
+    return result
+
+
 # --- État partagé entre la boucle de collecte et le serveur HTTP ---
 lock = threading.Lock()
 recent_snapshots = []  # liste des instantanés des IN_MEMORY_WINDOW_SECONDS dernières secondes
@@ -91,6 +226,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(fetch_met_no_wind())
             except Exception as e:
                 print(f"Erreur proxy met.no : {e}")
+                self.send_response(502)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+        elif self.path.startswith("/meteosat-fires"):
+            try:
+                self._send_json(fetch_eumetsat_fires())
+            except Exception as e:
+                print(f"Erreur proxy EUMETSAT : {e}")
                 self.send_response(502)
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
