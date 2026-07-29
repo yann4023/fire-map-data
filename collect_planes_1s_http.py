@@ -85,6 +85,22 @@ _eumetsat_token_cache = {"token": None, "expires_at": 0}
 _eumetsat_fires_cache = {"data": None, "fetched_at": 0}
 
 
+def eumetsat_request(req, timeout, label):
+    """Exécute une requête et journalise l'URL + le corps de la réponse d'erreur en cas d'échec —
+    sans ça, un 404/403/etc. générique ne dit pas laquelle des 3 requêtes (jeton/recherche/
+    téléchargement) est en cause ni pourquoi."""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        print(f"EUMETSAT [{label}] échec HTTP {e.code} sur {req.full_url}\nCorps de la réponse : {body}")
+        raise
+    except urllib.error.URLError as e:
+        print(f"EUMETSAT [{label}] échec réseau sur {req.full_url} : {e.reason}")
+        raise
+
+
 def get_eumetsat_token():
     now = time.time()
     if not EUMETSAT_CONSUMER_KEY or not EUMETSAT_CONSUMER_SECRET:
@@ -100,8 +116,8 @@ def get_eumetsat_token():
         headers={"Authorization": f"Basic {credentials}", "Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
+    raw = eumetsat_request(req, 15, "token")
+    payload = json.loads(raw.decode("utf-8"))
     _eumetsat_token_cache["token"] = payload["access_token"]
     _eumetsat_token_cache["expires_at"] = now + payload.get("expires_in", 3600)
     return _eumetsat_token_cache["token"]
@@ -175,8 +191,8 @@ def fetch_eumetsat_fires():
         f"&bbox={EUMETSAT_BBOX}&si=0&c=1&sort=start,time,0"
     )
     sreq = urllib.request.Request(search_url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(sreq, timeout=15) as sresp:
-        search_result = json.loads(sresp.read().decode("utf-8"))
+    search_raw = eumetsat_request(sreq, 15, "recherche")
+    search_result = json.loads(search_raw.decode("utf-8"))
 
     features = search_result.get("features", [])
     if not features:
@@ -191,8 +207,7 @@ def fetch_eumetsat_fires():
 
     download_url = f"{EUMETSAT_DOWNLOAD_BASE}/{urllib.parse.quote(EUMETSAT_COLLECTION_ID, safe='')}/products/{urllib.parse.quote(product_id, safe='')}"
     dreq = urllib.request.Request(download_url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(dreq, timeout=20) as dresp:
-        raw = dresp.read()
+    raw = eumetsat_request(dreq, 20, "téléchargement")
 
     fires = parse_cap_fires(raw)
     result = {"fires": fires, "product_time": product_time}
