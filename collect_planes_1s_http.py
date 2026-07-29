@@ -72,8 +72,8 @@ def fetch_met_no_wind():
 # résolution plus grossière (~3-4 km/pixel) mais cycle de répétition bien plus rapide (5-15 min).
 # Remplace TON_CONSUMER_KEY / TON_CONSUMER_SECRET par les identifiants récupérés sur
 # https://api.eumetsat.int/api-key/ avant de déployer.
-EUMETSAT_CONSUMER_KEY = "TON_CONSUMER_KEY"
-EUMETSAT_CONSUMER_SECRET = "TON_CONSUMER_SECRET"
+EUMETSAT_CONSUMER_KEY = os.environ.get("EUMETSAT_CONSUMER_KEY", "")
+EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET", "")
 EUMETSAT_TOKEN_URL = "https://api.eumetsat.int/token"
 EUMETSAT_BROWSE_URL = "https://api.eumetsat.int/data/browse/1.0.0/search"
 EUMETSAT_DOWNLOAD_BASE = "https://api.eumetsat.int/data/download/collections"
@@ -87,6 +87,8 @@ _eumetsat_fires_cache = {"data": None, "fetched_at": 0}
 
 def get_eumetsat_token():
     now = time.time()
+    if not EUMETSAT_CONSUMER_KEY or not EUMETSAT_CONSUMER_SECRET:
+        raise RuntimeError("EUMETSAT_CONSUMER_KEY / EUMETSAT_CONSUMER_SECRET non définies (variables d'environnement manquantes — voir configuration du service systemd).")
     # Marge de 60s avant l'expiration réelle pour éviter d'utiliser un jeton tout juste périmé.
     if _eumetsat_token_cache["token"] and now < _eumetsat_token_cache["expires_at"] - 60:
         return _eumetsat_token_cache["token"]
