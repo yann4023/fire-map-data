@@ -116,6 +116,7 @@ def make_snapshot(now, aircraft):
                 "gs": a.get("gs"),
                 "track": a.get("track"),
                 "dbFlags": a.get("dbFlags"),
+                "category": a.get("category"),
             }
             for a in aircraft
             if isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float))
