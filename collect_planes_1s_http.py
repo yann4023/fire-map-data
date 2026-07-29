@@ -161,7 +161,15 @@ def parse_cap_fires(raw_bytes):
         try:
             with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
                 names = zf.namelist()
-                xml_names = [n for n in names if n.lower().endswith((".xml", ".cap"))]
+                # Exclut explicitement les fichiers de métadonnées de l'archive (EOPMetadata.xml,
+                # manifest.xml) qui ne sont pas le fichier d'alerte CAP lui-même — sans ça, la
+                # sélection dépend de l'ordre des fichiers dans le ZIP, qui n'est pas garanti stable.
+                excluded = ("eopmetadata", "manifest")
+                xml_names = [
+                    n for n in names
+                    if n.lower().endswith((".xml", ".cap"))
+                    and not any(ex in n.lower() for ex in excluded)
+                ]
                 chosen = xml_names[0] if xml_names else (names[0] if names else None)
                 if not chosen:
                     print("CAP EUMETSAT : archive ZIP vide, rien à parser.")
