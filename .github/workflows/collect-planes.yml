@@ -1,0 +1,34 @@
+name: Collecte avions (48h)
+
+on:
+  schedule:
+    # Toutes les 15 minutes. GitHub ne garantit pas la ponctualité exacte
+    # (peut être retardé de quelques minutes selon la charge de leurs serveurs).
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {} # permet aussi de le lancer manuellement pour tester
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Configurer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lancer la collecte
+        run: python collect_planes.py
+
+      - name: Valider et pousser les changements
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/planes_history.json
+          git diff --quiet --cached || git commit -m "Mise à jour historique avions"
+          git push
