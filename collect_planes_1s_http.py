@@ -24,6 +24,8 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import base64
+import zipfile
+import io
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -152,11 +154,29 @@ def parse_cap_fires(raw_bytes):
     Analyse défensive : le schéma exact de ce produit précis n'a pas pu être vérifié avant
     déploiement (compte EUMETSAT créé pendant cette session) — si rien n'est trouvé, un message
     est journalisé pour faciliter l'ajustement une fois un vrai fichier observé."""
+    # Certaines collections EUMETSAT livrent le produit dans une archive ZIP plutôt que le XML
+    # brut directement (signature "PK" en tête de fichier) — on extrait le premier fichier
+    # XML/CAP trouvé à l'intérieur avant de parser.
+    if raw_bytes[:2] == b"PK":
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                names = zf.namelist()
+                xml_names = [n for n in names if n.lower().endswith((".xml", ".cap"))]
+                chosen = xml_names[0] if xml_names else (names[0] if names else None)
+                if not chosen:
+                    print("CAP EUMETSAT : archive ZIP vide, rien à parser.")
+                    return []
+                print(f"CAP EUMETSAT : produit livré en ZIP, extraction de '{chosen}' (fichiers dans l'archive : {names}).")
+                raw_bytes = zf.read(chosen)
+        except zipfile.BadZipFile as e:
+            print(f"CAP EUMETSAT : le contenu ressemble à un ZIP mais n'a pas pu être ouvert ({e}).")
+            return []
+
     fires = []
     try:
         root = ET.fromstring(raw_bytes)
     except ET.ParseError as e:
-        print(f"CAP EUMETSAT : échec de parsing XML ({e}) — le fichier n'est peut-être pas au format attendu.")
+        print(f"CAP EUMETSAT : échec de parsing XML ({e}) — le fichier n'est peut-être pas au format attendu. Début du contenu : {raw_bytes[:200]!r}")
         return fires
 
     ns = {"cap": "urn:oasis:names:tc:emergency:cap:1.2"}
