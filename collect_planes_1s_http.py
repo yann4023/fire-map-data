@@ -32,7 +32,7 @@ DATA_FILE = "data/planes_history.json"
 MAX_AGE_SECONDS = 49 * 3600
 POLL_SECONDS = 1
 BATCH_SECONDS = 3       # regroupe les commits/push GitHub
-IN_MEMORY_WINDOW_SECONDS = 10 * 60  # 10 min gardées en mémoire pour le serveur HTTP direct
+IN_MEMORY_WINDOW_SECONDS = 60 * 60  # 1h gardée en mémoire pour le serveur HTTP direct (manœuvres visibles en direct)
 HTTP_PORT = 8080
 
 MET_NO_LAT = 44.84
