@@ -19,7 +19,7 @@ RADIUS_NM = 150
 
 DATA_FILE = "data/planes_history.json"
 MAX_AGE_SECONDS = 49 * 3600  # purge au-delà de 49h
-
+ 
 
 def fetch_planes():
     url = f"https://api.airplanes.live/v2/point/{LAT}/{LON}/{RADIUS_NM}"
