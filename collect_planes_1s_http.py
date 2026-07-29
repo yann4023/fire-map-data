@@ -77,7 +77,7 @@ EUMETSAT_CONSUMER_SECRET = os.environ.get("EUMETSAT_CONSUMER_SECRET", "")
 EUMETSAT_TOKEN_URL = "https://api.eumetsat.int/token"
 EUMETSAT_BROWSE_URL = "https://api.eumetsat.int/data/search-products/1.0.0/os"  # OpenSearch — confirmé sans authentification requise
 EUMETSAT_DOWNLOAD_BASE = "https://api.eumetsat.int/data/download/collections"
-EUMETSAT_COLLECTION_ID = "EO:EUM:DAT:MSG:FIR"  # Active Fire Monitoring - MSG - 0 degree
+EUMETSAT_COLLECTION_ID = "EO:EUM:DAT:0801"  # Active Fire Monitoring (CAP) - MTG - 0 degree — le seul confirmé en format CAP ; EO:EUM:DAT:MSG:FIR est en réalité en GRIB, incompatible avec le parsing XML ci-dessous
 EUMETSAT_BBOX = "-5.5,41,10,51.5"  # même emprise que FRANCE_BBOX (west,south,east,north)
 EUMETSAT_CACHE_SECONDS = 5 * 60  # produit généré toutes les ~15 min ; 5 min de cache est prudent
 
