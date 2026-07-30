@@ -259,6 +259,12 @@ def fetch_eumetsat_fires():
 lock = threading.Lock()
 recent_snapshots = []  # liste des instantanés des IN_MEMORY_WINDOW_SECONDS dernières secondes
 
+# Clé partagée avec le client : filtre les robots qui scannent Internet à la recherche
+# d'endpoints ouverts. Doit correspondre exactement à API_SHARED_KEY dans fire-map-v2.html.
+# Ce n'est PAS un vrai secret si le fichier HTML est partagé — combiné à nginx en frontal et
+# au binding local ci-dessous, c'est une couche de friction, pas une garantie d'inviolabilité.
+API_SHARED_KEY = os.environ.get("API_SHARED_KEY", "")
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, payload):
@@ -270,14 +276,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _check_key(self):
+        if not API_SHARED_KEY:
+            return True  # pas de clé configurée = pas de vérification (dev local)
+        query = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(query)
+        provided = (params.get("key") or [""])[0]
+        return provided == API_SHARED_KEY
+
     def do_GET(self):
+        if not self._check_key():
+            self.send_response(403)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b'{"error":"cle API manquante ou invalide"}')
+            return
+
         with lock:
             snapshots = list(recent_snapshots)
-        if self.path.startswith("/latest"):
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/latest":
             self._send_json(snapshots[-1] if snapshots else {})
-        elif self.path.startswith("/recent"):
+        elif path == "/recent":
             self._send_json(snapshots)
-        elif self.path.startswith("/wind"):
+        elif path == "/wind":
             try:
                 self._send_json(fetch_met_no_wind())
             except Exception as e:
@@ -285,7 +307,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(502)
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
-        elif self.path.startswith("/meteosat-fires"):
+        elif path == "/history":
+            # Sert l'archive locale directement : le client n'a plus besoin de passer par
+            # raw.githubusercontent.com, dont la mise a jour depend d'un push qui peut echouer.
+            try:
+                self._send_json(load_history())
+            except Exception as e:
+                print(f"Erreur lecture historique : {e}")
+                self.send_response(500)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+        elif path == "/meteosat-fires":
             try:
                 self._send_json(fetch_eumetsat_fires())
             except Exception as e:
@@ -302,8 +334,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run_http_server():
-    server = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler)
-    print(f"Serveur HTTP direct démarré sur le port {HTTP_PORT} (/recent, /latest, /wind)")
+    # Écoute uniquement en local (127.0.0.1) : plus accessible directement depuis l'extérieur.
+    # nginx (sur le VPS) fait le relais public et applique la limitation de débit — voir
+    # nginx_fire_map.conf fourni séparément.
+    server = ThreadingHTTPServer(("127.0.0.1", HTTP_PORT), Handler)
+    print(f"Serveur HTTP local démarré sur 127.0.0.1:{HTTP_PORT} (/recent, /latest, /wind, /meteosat-fires) — accessible uniquement via nginx")
     server.serve_forever()
 
 
@@ -334,8 +369,27 @@ def save_history(history):
 def git_push():
     subprocess.run(["git", "add", DATA_FILE], check=False)
     result = subprocess.run(["git", "commit", "-m", "Auto update (1s)", "--quiet"], check=False)
-    if result.returncode == 0:
-        subprocess.run(["git", "push", "--quiet"], check=False)
+    if result.returncode != 0:
+        return
+    push = subprocess.run(["git", "push", "--quiet"], check=False,
+                          capture_output=True, text=True)
+    if push.returncode == 0:
+        return
+    # Push refuse : le depot distant a diverge (edition sur GitHub pendant que le service
+    # tournait). Sans reprise automatique, les commits s'accumulent en local et l'archive
+    # distante reste figee — c'est ce qui rendait l'historique inutilisable cote client.
+    print("Push refuse, tentative de reconciliation automatique (pull --rebase)...")
+    pull = subprocess.run(["git", "pull", "--rebase", "--quiet"], check=False,
+                          capture_output=True, text=True)
+    if pull.returncode != 0:
+        # Le rebase bute sur un conflit dans le fichier de donnees : celui-ci etant
+        # regenere en continu, la version distante peut etre abandonnee sans perte.
+        print("Rebase en conflit, on garde la version locale du fichier de donnees.")
+        subprocess.run(["git", "checkout", "--ours", DATA_FILE], check=False)
+        subprocess.run(["git", "add", DATA_FILE], check=False)
+        subprocess.run(["git", "rebase", "--continue"], check=False,
+                       env={**os.environ, "GIT_EDITOR": "true"})
+    subprocess.run(["git", "push", "--quiet"], check=False)
 
 
 def make_snapshot(now, aircraft):
