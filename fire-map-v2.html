@@ -20,15 +20,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;   /* jamais de retour a la ligne : la hauteur reste constante */
     gap: 8px;
-    padding: 10px 14px;
+    padding: 4px 10px;
+    min-height: 0;
     border-bottom: 1px solid #1e293b;
     background: #0d1420;
     z-index: 10;
   }
   header h1 {
-    font-size: 14px;
+    font-size: 13px;
+    min-width: 0;        /* autorise le titre a se tronquer plutot qu'a pousser la barre */
+    flex-shrink: 1;
     font-weight: 600;
     color: #fff;
     display: flex;
@@ -37,13 +40,31 @@
     margin: 0;
   }
   .flame { color: #f97316; }
+  header .title-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  header button { padding: 3px 8px; font-size: 11px; }
   .meta {
     display: flex;
     align-items: center;
-    gap: 14px;
-    font-size: 12px;
+    gap: 10px;
+    font-size: 11px;
     color: #94a3b8;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* Attribution Leaflet : compacte et tronquee plutot que sur plusieurs lignes. */
+  .leaflet-control-attribution {
+    font-size: 9px !important;
+    max-width: 52vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 5px !important;
   }
   button {
     font: inherit;
@@ -215,17 +236,12 @@
 
   /* Barre laterale repliee : reduite a une bande etroite, la carte occupe tout le reste. */
   #sidebar.collapsed { display: none; }
+  /* Le bouton vit desormais DANS l'en-tete : plus de positionnement absolu, il ne chevauche
+     donc plus le titre comme c'etait le cas au-dessus de la carte. */
   #sidebar-toggle {
-    display: block;
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 470;
-    padding: 8px 12px;
-    font-size: 14px;
-    border-radius: 8px;
-    background: rgba(10, 14, 20, 0.9);
-    border: 1px solid #334155;
+    flex-shrink: 0;
+    white-space: nowrap;
+    border-radius: 6px;
   }
 
   /* ---- Ecrans etroits (telephones, tablettes en portrait) ----
@@ -250,9 +266,14 @@
     #sidebar.open { transform: translateX(0); }
     #body-layout { position: relative; }
 
-    header { padding: 8px 10px; }
-    header h1 { font-size: 15px; }
-    .meta { font-size: 11px; gap: 6px; }
+    header { padding: 3px 8px; }
+    header h1 { font-size: 12px; }
+    .meta { font-size: 10px; gap: 6px; }
+    /* Sur ecran etroit, le titre complet et les infos secondaires sont sacrifies en premier :
+       ils sont informatifs mais non essentiels, et c'est ce qui forcait l'en-tete a grandir. */
+    header .title-text { display: none; }
+    #last-update, #countdown { display: none; }
+    .leaflet-control-attribution { max-width: 62vw; font-size: 8px !important; }
 
     /* Le bandeau de stats et la legende se chevauchaient avec le bouton du tiroir. */
     #stats-bar {
@@ -279,6 +300,10 @@
 
   /* ---- Tres petits ecrans : on retire ce qui est secondaire ---- */
   @media (max-width: 480px) {
+    #share-btn { display: none; }   /* le partage reste possible via l'URL du navigateur */
+    .btn-label { display: none; }   /* on garde l'icone seule : le sens reste lisible */
+    #wind-display { display: none; }
+    .leaflet-control-attribution { max-width: 70vw; }
     .ts-btn { display: none; }   /* vitesses de lecture : rarement utiles au doigt */
     .legend { display: none; }   /* la legende prend trop de place sur un petit ecran */
     #compass { display: none; }
@@ -287,7 +312,8 @@
   /* ---- Ecrans bas et larges (16/9 en paysage sur mobile) ----
      La hauteur devient la ressource rare : on comprime les elements verticaux. */
   @media (max-height: 500px) {
-    header { padding: 4px 10px; }
+    header { padding: 2px 8px; }
+    header h1, .meta { font-size: 10px; }
     #timeline-bar { padding: 5px 8px; }
     #stats-bar { padding: 4px 10px; }
   }
@@ -481,26 +507,30 @@
 
 <div id="app" style="display:none">
   <header>
-    <h1><span class="flame">🔥</span> Carte des feux — France / Europe</h1>
+    <h1>
+      <button id="sidebar-toggle" aria-label="Ouvrir ou fermer les paramètres">⚙️<span class="btn-label"> Paramètres</span></button>
+      <span class="flame">🔥</span>
+      <span class="title-text">Carte des feux — France / Europe</span>
+    </h1>
     <div class="meta">
       <span id="wind-display"></span>
       <span id="last-update"></span>
       <span id="countdown" class="muted"></span>
-      <button id="refresh-btn">↻ Actualiser</button>
-      <button id="share-btn" title="Copier un lien vers la vue actuelle">🔗 Partager la vue</button>
-      <button id="change-key-btn" title="Changer de clé MAP_KEY">🔑 Changer de clé</button>
+      <button id="refresh-btn">↻<span class="btn-label"> Actualiser</span></button>
+      <button id="share-btn" title="Copier un lien vers la vue actuelle">🔗 Partager</button>
     </div>
   </header>
   <div id="error-banner"></div>
   <div id="body-layout">
-    <button id="sidebar-toggle" aria-label="Ouvrir ou fermer le panneau des calques">☰ Calques</button>
     <aside id="sidebar">
       <div class="panel" style="padding-top:8px;padding-bottom:8px">
-        <h3>⚙️ Affichage</h3>
+        <h3>⚙️ Paramètres</h3>
         <label class="toggle-row" style="font-size:11px">
           <input type="checkbox" id="toggle-all-help" />
           Afficher toutes les explications
         </label>
+        <button id="change-key-btn" title="Changer de clé NASA FIRMS" style="margin-top:8px;width:100%;font-size:11px">🔑 Changer de clé FIRMS</button>
+        <p class="muted" style="margin-top:6px">Sans effet si le serveur fournit déjà une clé partagée : dans ce cas aucune clé personnelle n'est nécessaire.</p>
       </div>
       <div class="panel">
         <h3>Détections</h3>
