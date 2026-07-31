@@ -7,15 +7,94 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
-  :root { color-scheme: dark; }
+  /* ---------- Système de thème : 4 palettes sélectionnables ----------
+     "classique" = les couleurs d'origine, inchangées. Les 3 autres sont les
+     pistes proposées (thermique satellite / cendre-braise / instruments d'aviation).
+     Tout le CSS ci-dessous consomme ces variables plutôt que des hex en dur. */
+  :root {
+    color-scheme: dark;
+    --bg-void: #0a0e14;
+    --bg-panel: #111823;
+    --bg-panel-2: #0d1420;
+    --bg-hover: #334155;
+    --bg-row-hover: #16202f;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent: #f97316;
+    --accent-dark: #ea580c;
+    --accent-light: #fb923c;
+    --frp-1: #fef08a;
+    --frp-2: #f97316;
+    --frp-3: #dc2626;
+    --frp-4: #7f1d1d;
+  }
+  [data-theme="thermal"] {
+    /* Thermique satellite : rampe violet -> orange -> jaune des caméras thermiques / VIIRS */
+    --bg-void: #120a1c;
+    --bg-panel: #1c1230;
+    --bg-panel-2: #170e28;
+    --bg-hover: #3d2a63;
+    --bg-row-hover: #24173d;
+    --border: #2d1b4e;
+    --text: #ede9fe;
+    --text-muted: #a78bfa;
+    --text-dim: #7c6aa8;
+    --accent: #fb923c;
+    --accent-dark: #ea7c1f;
+    --accent-light: #fbbf24;
+    --frp-1: #fbbf24;
+    --frp-2: #fb923c;
+    --frp-3: #7c3aed;
+    --frp-4: #2d1b4e;
+  }
+  [data-theme="ash"] {
+    /* Cendre et braise : gris-cendre chaud, rouge-brique en accent */
+    --bg-void: #1c1a17;
+    --bg-panel: #24221e;
+    --bg-panel-2: #211f1b;
+    --bg-hover: #4a453b;
+    --bg-row-hover: #2e2a24;
+    --border: #3a362e;
+    --text: #ece7de;
+    --text-muted: #b3ab9c;
+    --text-dim: #8a8578;
+    --accent: #d64933;
+    --accent-dark: #b23c29;
+    --accent-light: #e8703a;
+    --frp-1: #e8c05a;
+    --frp-2: #d64933;
+    --frp-3: #8b2f1f;
+    --frp-4: #4a453b;
+  }
+  [data-theme="aviation"] {
+    /* Instruments d'aviation : cyan/ambre façon écran multifonction de cockpit */
+    --bg-void: #0b1014;
+    --bg-panel: #141b22;
+    --bg-panel-2: #101619;
+    --bg-hover: #223038;
+    --bg-row-hover: #182029;
+    --border: #223038;
+    --text: #e4eef2;
+    --text-muted: #7a94a3;
+    --text-dim: #587080;
+    --accent: #22d3ee;
+    --accent-dark: #0fb8d4;
+    --accent-light: #67e3f5;
+    --frp-1: #fde68a;
+    --frp-2: #f5a623;
+    --frp-3: #ef4444;
+    --frp-4: #7a1f1f;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     overflow-x: hidden;   /* garde-fou : aucun element ne peut elargir la page au-dela de l'ecran */
     max-width: 100vw;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0a0e14;
-    color: #e2e8f0;
+    background: var(--bg-void);
+    color: var(--text);
   }
   /* 100dvh (dynamic viewport height) au lieu de 100vh : sur mobile, 100vh ignore les barres
      du navigateur, qui recouvrent alors le bas de la page — la frise devenait inaccessible.
@@ -29,8 +108,8 @@
     gap: 8px;
     padding: 4px 10px;
     min-height: 0;
-    border-bottom: 1px solid #1e293b;
-    background: #0d1420;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel-2);
     z-index: 10;
   }
   header h1 {
@@ -44,7 +123,7 @@
     gap: 8px;
     margin: 0;
   }
-  .flame { color: #f97316; }
+  .flame { color: var(--accent); }
   header .title-text {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -56,7 +135,7 @@
     align-items: center;
     gap: 10px;
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-muted);
     flex-wrap: nowrap;
     overflow: hidden;
     /* flex-shrink: 1 et min-width: 0 sont indispensables : avec flex-shrink: 0, ce bloc
@@ -81,20 +160,30 @@
     border: none;
     border-radius: 6px;
     padding: 6px 10px;
-    background: #1e293b;
-    color: #e2e8f0;
+    background: var(--border);
+    color: var(--text);
     display: flex;
     align-items: center;
     gap: 6px;
   }
-  button:hover { background: #334155; }
+  button:hover { background: var(--bg-hover); }
   button:disabled { opacity: 0.5; cursor: default; }
+  .theme-swatch-btn {
+    border: 1px solid var(--border);
+    background: var(--bg-panel-2);
+    color: var(--text-muted);
+  }
+  .theme-swatch-btn.active {
+    border-color: var(--accent);
+    color: var(--text);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
   #body-layout { flex: 1; display: flex; overflow: hidden; }
   #sidebar {
     width: 260px;
     flex-shrink: 0;
-    border-right: 1px solid #1e293b;
-    background: #0d1420;
+    border-right: 1px solid var(--border);
+    background: var(--bg-panel-2);
     padding: 12px;
     overflow-y: auto;
     display: flex;
@@ -102,8 +191,8 @@
     gap: 12px;
   }
   .panel {
-    background: #111823;
-    border: 1px solid #1e293b;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px;
     font-size: 12px;
@@ -113,11 +202,11 @@
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #94a3b8;
+    color: var(--text-muted);
   }
   .panel.official p { margin: 6px 0; line-height: 1.4; }
-  .panel.official a { color: #fb923c; text-decoration: none; font-size: 12px; }
-  .muted { color: #64748b; }
+  .panel.official a { color: var(--accent-light); text-decoration: none; font-size: 12px; }
+  .muted { color: var(--text-dim); }
   .toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .stat-row { display: flex; justify-content: space-between; padding: 3px 0; }
   .plane-row {
@@ -127,17 +216,17 @@
     padding: 8px 6px;
     border-radius: 8px;
     margin-bottom: 4px;
-    background: #0d1420;
+    background: var(--bg-panel-2);
     font-size: 11px;
   }
-  .plane-row:hover { background: #16202f; }
+  .plane-row:hover { background: var(--bg-row-hover); }
   .plane-row .pr-checkbox { flex-shrink: 0; }
   .plane-row .pr-icon-box {
     flex-shrink: 0;
     width: 34px;
     height: 34px;
     border-radius: 8px;
-    background: #1e293b;
+    background: var(--border);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -146,7 +235,7 @@
   .plane-row.secu .pr-icon-box { background: rgba(251, 146, 60, 0.15); }
   .plane-row .pr-info { flex: 1; min-width: 0; }
   .plane-row .pr-call {
-    color: #e2e8f0;
+    color: var(--text);
     font-weight: 600;
     font-size: 12px;
     display: flex;
@@ -161,8 +250,8 @@
     flex-shrink: 0;
     box-shadow: 0 0 4px #22c55e;
   }
-  .plane-row .pr-detail { color: #64748b; font-size: 10px; margin-top: 1px; }
-  .plane-row.secu .pr-call { color: #fb923c; }
+  .plane-row .pr-detail { color: var(--text-dim); font-size: 10px; margin-top: 1px; }
+  .plane-row.secu .pr-call { color: var(--accent-light); }
   .planes-bulk-btn { border-radius: 20px !important; font-weight: 500; }
   #map { flex: 1; position: relative; }
   #wind-canvas {
@@ -179,7 +268,7 @@
     width: 84px;
     height: 84px;
     background: rgba(10, 14, 20, 0.82);
-    border: 1px solid #334155;
+    border: 1px solid var(--bg-hover);
     border-radius: 50%;
     pointer-events: none;
     display: flex;
@@ -191,14 +280,14 @@
   details.help > summary {
     cursor: pointer;
     font-size: 10px;
-    color: #64748b;
+    color: var(--text-dim);
     list-style: none;
     user-select: none;
     padding: 1px 0;
   }
   details.help > summary::-webkit-details-marker { display: none; }
   details.help > summary::before { content: "\24D8  "; }
-  details.help > summary:hover { color: #94a3b8; }
+  details.help > summary:hover { color: var(--text-muted); }
   details.help[open] > summary::before { content: "\24D8  "; }
   details.help > p.muted { margin-top: 4px; }
   #stats-bar {
@@ -211,7 +300,7 @@
     gap: 18px;
     padding: 8px 16px;
     background: rgba(10, 14, 20, 0.85);
-    border: 1px solid #334155;
+    border: 1px solid var(--bg-hover);
     border-radius: 10px;
     pointer-events: none;
   }
@@ -235,7 +324,7 @@
   .panel > summary::-webkit-details-marker { display: none; }
   .panel > summary::before {
     content: "\25B8";
-    color: #64748b;
+    color: var(--text-dim);
     transition: transform 0.15s ease;
     display: inline-block;
   }
@@ -331,20 +420,20 @@
     #stats-bar { padding: 4px 10px; }
   }
   #stats-bar .stat { display: flex; flex-direction: column; align-items: center; }
-  #stats-bar .stat-val { font-size: 15px; font-weight: 600; color: #e2e8f0; }
-  #stats-bar .stat-lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+  #stats-bar .stat-val { font-size: 15px; font-weight: 600; color: var(--text); }
+  #stats-bar .stat-lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   #compass-label {
     position: absolute;
     bottom: -20px;
     font-size: 10px;
-    color: #94a3b8;
+    color: var(--text-muted);
     white-space: nowrap;
     text-align: center;
   }
   #gate {
     position: fixed;
     inset: 0;
-    background: #0a0e14;
+    background: var(--bg-void);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -354,8 +443,8 @@
   .card {
     max-width: 420px;
     width: 100%;
-    background: #111823;
-    border: 1px solid #1e293b;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 14px;
     padding: 26px;
   }
@@ -367,8 +456,8 @@
     gap: 8px;
     margin: 0 0 14px;
   }
-  .card p { font-size: 13px; color: #94a3b8; line-height: 1.5; }
-  .card a { color: #fb923c; }
+  .card p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+  .card a { color: var(--accent-light); }
   .note {
     display: flex;
     gap: 8px;
@@ -382,26 +471,26 @@
   }
   input {
     width: 100%;
-    background: #0a0e14;
-    border: 1px solid #334155;
+    background: var(--bg-void);
+    border: 1px solid var(--bg-hover);
     border-radius: 8px;
     padding: 9px 11px;
     font-family: monospace;
     font-size: 13px;
-    color: #e2e8f0;
+    color: var(--text);
     margin-bottom: 12px;
   }
-  input:focus { outline: none; border-color: #f97316; }
+  input:focus { outline: none; border-color: var(--accent); }
   .submit {
     width: 100%;
-    background: #ea580c;
+    background: var(--accent-dark);
     color: #fff;
     font-weight: 600;
     padding: 10px;
     justify-content: center;
   }
-  .submit:hover { background: #f97316; }
-  .submit:disabled { background: #334155; }
+  .submit:hover { background: var(--accent); }
+  .submit:disabled { background: var(--bg-hover); }
   #error-banner {
     display: none;
     margin: 10px 14px 0;
@@ -413,8 +502,8 @@
     color: #fca5a5;
   }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-    background: #111823;
-    color: #e2e8f0;
+    background: var(--bg-panel);
+    color: var(--text);
   }
   .leaflet-popup-content {
     font-size: 12px;
@@ -423,7 +512,7 @@
   /* Leaflet pose la classe "leaflet-container" sur #map LUI-MEME : le selecteur descendant
      "#map .leaflet-container" ne correspondait donc a rien, et le fond restait blanc la ou
      aucune tuile n'est disponible (mer, hors couverture IGN). */
-  #map.leaflet-container { background: #0d1520; }
+  #map.leaflet-container { background: var(--bg-panel-2); }
   /* Les deux volets sont empiles dans un conteneur positionne ; chacun se replie
      independamment, on peut donc garder l'intensite ouverte et l'anciennete fermee. */
   .legend-stack {
@@ -438,7 +527,7 @@
   }
   .legend {
     background: rgba(10, 14, 20, 0.85);
-    border: 1px solid #1e293b;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 5px 9px;
     font-size: 11px;
@@ -453,7 +542,7 @@
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #94a3b8;
+    color: var(--text-muted);
     display: flex;
     align-items: center;
     gap: 5px;
@@ -467,13 +556,13 @@
   }
   .legend[open] > summary::before { transform: rotate(90deg); }
   .legend[open] > summary { margin-bottom: 6px; }
-  .legend-title { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+  .legend-title { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
   .legend-gradient-bar {
     height: 8px;
     border-radius: 4px;
-    background: linear-gradient(to right, #fef08a, #f97316, #dc2626, #7f1d1d);
+    background: linear-gradient(to right, var(--frp-1), var(--frp-2), var(--frp-3), var(--frp-4));
   }
-  .legend-ticks { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-top: 3px; }
+  .legend-ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 3px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   #timeline-bar > * { min-width: 0; }
   #timeline-bar {
@@ -485,7 +574,7 @@
     bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: 1000;
     background: rgba(10, 14, 20, 0.9);
-    border: 1px solid #1e293b;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 5px 10px;   /* affine : la frise mordait inutilement sur la carte */
     display: flex;
@@ -495,7 +584,7 @@
   }
   #timeline-live-btn, .tw-btn, .ts-btn { padding-top: 3px; padding-bottom: 3px; }
   #timeline-play {
-    background: #ea580c;
+    background: var(--accent-dark);
     border-radius: 50%;
     width: 24px;
     height: 24px;
@@ -505,14 +594,14 @@
     padding: 0;
     flex-shrink: 0;
   }
-  #timeline-play:hover { background: #f97316; }
+  #timeline-play:hover { background: var(--accent); }
   .timeline-window-btns { display: flex; gap: 4px; flex-shrink: 0; }
   #timeline-live-btn {
     flex-shrink: 0;
     font-size: 11px;
     padding: 6px 10px;
-    background: #1e293b;
-    color: #64748b;
+    background: var(--border);
+    color: var(--text-dim);
     border-radius: 20px;
     font-weight: 500;
   }
@@ -528,12 +617,12 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
   }
-  .tw-btn { padding: 4px 8px; font-size: 11px; background: #1e293b; }
-  .tw-btn.active { background: #ea580c; color: #fff; }
+  .tw-btn { padding: 4px 8px; font-size: 11px; background: var(--border); }
+  .tw-btn.active { background: var(--accent-dark); color: #fff; }
   .timeline-speed-btns { display: flex; gap: 4px; flex-shrink: 0; }
-  .ts-btn { padding: 4px 7px; font-size: 11px; background: #1e293b; }
+  .ts-btn { padding: 4px 7px; font-size: 11px; background: var(--border); }
   .ts-btn.active { background: #2563eb; color: #fff; }
-  #timeline-slider { flex: 1; accent-color: #f97316; }
+  #timeline-slider { flex: 1; accent-color: var(--accent); }
   #timeline-label { flex-shrink: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
@@ -580,6 +669,21 @@
         </label>
         <button id="change-key-btn" title="Changer de clé NASA FIRMS" style="margin-top:8px;width:100%;font-size:11px">🔑 Changer de clé FIRMS</button>
         <p class="muted" style="margin-top:6px">Sans effet si le serveur fournit déjà une clé partagée : dans ce cas aucune clé personnelle n'est nécessaire.</p>
+        <p class="muted" style="margin-top:10px;margin-bottom:6px">🎨 Thème</p>
+        <div id="theme-picker" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          <button class="theme-swatch-btn active" data-theme="classic" title="Classique" style="flex-direction:column;gap:3px;padding:6px 2px;font-size:9px">
+            <span style="width:100%;height:14px;border-radius:4px;background:linear-gradient(90deg,#0a0e14,#f97316)"></span>Classique
+          </button>
+          <button class="theme-swatch-btn" data-theme="thermal" title="Thermique satellite" style="flex-direction:column;gap:3px;padding:6px 2px;font-size:9px">
+            <span style="width:100%;height:14px;border-radius:4px;background:linear-gradient(90deg,#120a1c,#7c3aed,#fbbf24)"></span>Thermique
+          </button>
+          <button class="theme-swatch-btn" data-theme="ash" title="Cendre et braise" style="flex-direction:column;gap:3px;padding:6px 2px;font-size:9px">
+            <span style="width:100%;height:14px;border-radius:4px;background:linear-gradient(90deg,#1c1a17,#d64933)"></span>Cendre
+          </button>
+          <button class="theme-swatch-btn" data-theme="aviation" title="Instruments d'aviation" style="flex-direction:column;gap:3px;padding:6px 2px;font-size:9px">
+            <span style="width:100%;height:14px;border-radius:4px;background:linear-gradient(90deg,#0b1014,#22d3ee)"></span>Aviation
+          </button>
+        </div>
       </div>
       <div class="panel">
         <h3>Détections</h3>
@@ -874,16 +978,31 @@ async function detectFirmsProxy() {
 }
 
 // Dégradé continu de couleur selon la FRP, sur échelle logarithmique (comme la légende 1/10/50/800+ de GISFire).
-const FRP_COLOR_STOPS = [
-  { log: 0, rgb: [254, 240, 138] },              // 1 MW   — jaune pâle
-  { log: 1, rgb: [249, 115, 22] },                // 10 MW  — orange
-  { log: Math.log10(50), rgb: [220, 38, 38] },    // 50 MW  — rouge
-  { log: Math.log10(800), rgb: [127, 29, 29] }    // 800+ MW — rouge très profond
-];
+// Les 4 couleurs viennent des variables CSS --frp-1..4 du thème actif (voir sélecteur de thème plus bas),
+// donc les points sur la carte restent toujours cohérents avec la légende affichée.
+let cachedFrpStops = null;
+let cachedFrpTheme = null;
+function hexToRgbArr(hex) {
+  const n = parseInt(hex.trim().replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function getFrpStops() {
+  const theme = document.documentElement.getAttribute("data-theme") || "classic";
+  if (cachedFrpStops && cachedFrpTheme === theme) return cachedFrpStops;
+  const cs = getComputedStyle(document.documentElement);
+  cachedFrpStops = [
+    { log: 0, rgb: hexToRgbArr(cs.getPropertyValue("--frp-1")) },
+    { log: 1, rgb: hexToRgbArr(cs.getPropertyValue("--frp-2")) },
+    { log: Math.log10(50), rgb: hexToRgbArr(cs.getPropertyValue("--frp-3")) },
+    { log: Math.log10(800), rgb: hexToRgbArr(cs.getPropertyValue("--frp-4")) }
+  ];
+  cachedFrpTheme = theme;
+  return cachedFrpStops;
+}
 function frpToColor(frpRaw) {
   const frp = Math.max(1, parseFloat(frpRaw) || 1);
   const logFrp = Math.log10(frp);
-  const stops = FRP_COLOR_STOPS;
+  const stops = getFrpStops();
   if (logFrp <= stops[0].log) return rgbHex(stops[0].rgb);
   if (logFrp >= stops[stops.length - 1].log) return rgbHex(stops[stops.length - 1].rgb);
   for (let i = 0; i < stops.length - 1; i++) {
@@ -3783,6 +3902,42 @@ function startCountdown(seconds) {
     render();
   }, 1000);
 }
+
+// --- Thème visuel : 4 palettes possibles, appliquées via data-theme sur <html> ---
+// "classic" reste le comportement d'origine ; les 3 autres sont les pistes proposées.
+const THEME_STORAGE_KEY = "firemap_theme";
+
+function applyTheme(theme) {
+  if (theme === "classic") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", theme);
+
+  document.querySelectorAll(".theme-swatch-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.theme === theme);
+  });
+
+  // La couleur des points de feu dépend des variables --frp-1..4 du thème actif :
+  // on invalide le cache et on redessine pour qu'ils suivent immédiatement le nouveau thème.
+  cachedFrpStops = null;
+  if (typeof renderFiresForWindow === "function" && map) renderFiresForWindow();
+}
+
+document.querySelectorAll(".theme-swatch-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const theme = btn.dataset.theme;
+    applyTheme(theme);
+    try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) { /* stockage indisponible, tant pis */ }
+  });
+});
+
+// Applique le thème sauvegardé dès que possible (avant même le chargement de la carte),
+// pour éviter un flash de l'ancien thème au démarrage.
+try {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  if (savedTheme && savedTheme !== "classic") document.documentElement.setAttribute("data-theme", savedTheme);
+  document.querySelectorAll(".theme-swatch-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.theme === (savedTheme || "classic"));
+  });
+} catch (e) { /* pas de localStorage, on reste sur le thème classique */ }
 
 const STORAGE_KEY = "firemap_firms_key";
 
