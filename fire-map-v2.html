@@ -188,8 +188,35 @@
   #stats-bar.hidden { display: none; }
 
   /* Bouton d'ouverture du tiroir lateral : masque sur grand ecran, visible sur mobile. */
+  /* Sections repliables : le titre reste toujours visible, le contenu se deplie au clic. */
+  .panel > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #cbd5e1;
+  }
+  .panel > summary::-webkit-details-marker { display: none; }
+  .panel > summary::before {
+    content: "\25B8";
+    color: #64748b;
+    transition: transform 0.15s ease;
+    display: inline-block;
+  }
+  .panel[open] > summary::before { transform: rotate(90deg); }
+  .panel > summary:hover { color: #f1f5f9; }
+  .panel[open] > summary { margin-bottom: 8px; }
+
+  /* Barre laterale repliee : reduite a une bande etroite, la carte occupe tout le reste. */
+  #sidebar.collapsed { display: none; }
   #sidebar-toggle {
-    display: none;
+    display: block;
     position: absolute;
     top: 10px;
     left: 10px;
@@ -205,7 +232,9 @@
      La barre laterale passe en tiroir superpose a la carte au lieu de lui voler de la largeur :
      sur 380 px, une colonne fixe de 260 px ne laisserait presque rien a la carte. */
   @media (max-width: 820px) {
-    #sidebar-toggle { display: block; }
+    /* Sur mobile le tiroir se pilote par translation, pas par display : sans cette regle,
+       la classe "collapsed" posee au demarrage empecherait toute ouverture. */
+    #sidebar.collapsed { display: flex; }
     #sidebar {
       position: absolute;
       top: 0;
@@ -241,7 +270,8 @@
     #compass svg { width: 60px; height: 60px; }
 
     /* La frise doit rester utilisable au pouce : on autorise le retour a la ligne. */
-    #timeline-bar { flex-wrap: wrap; gap: 6px; padding: 8px; }
+    /* Frise volontairement compacte : elle empietait inutilement sur la carte. */
+  #timeline-bar { flex-wrap: wrap; gap: 6px; padding: 8px; }
     #timeline-slider { order: 10; flex-basis: 100%; }
     #timeline-label { min-width: 0; font-size: 10px; }
     .tw-btn { padding: 6px 9px; }
@@ -377,22 +407,23 @@
     position: absolute;
     left: 14px;
     right: 14px;
-    bottom: 20px;
+    bottom: 12px;
     z-index: 1000;
     background: rgba(10, 14, 20, 0.9);
     border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 10px 14px;
+    border-radius: 8px;
+    padding: 5px 10px;   /* affine : la frise mordait inutilement sur la carte */
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 12px;
+    gap: 8px;
+    font-size: 11px;
   }
+  #timeline-live-btn, .tw-btn, .ts-btn { padding-top: 3px; padding-bottom: 3px; }
   #timeline-play {
     background: #ea580c;
     border-radius: 50%;
-    width: 30px;
-    height: 30px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -465,6 +496,7 @@
     <button id="sidebar-toggle" aria-label="Ouvrir ou fermer le panneau des calques">☰ Calques</button>
     <aside id="sidebar">
       <div class="panel" style="padding-top:8px;padding-bottom:8px">
+        <h3>⚙️ Affichage</h3>
         <label class="toggle-row" style="font-size:11px">
           <input type="checkbox" id="toggle-all-help" />
           Afficher toutes les explications
@@ -475,6 +507,7 @@
         <div id="stats-content" class="muted">Chargement…</div>
       </div>
       <div class="panel">
+        <h3>🌬️ Vent</h3>
         <label class="toggle-row">
           <input type="checkbox" id="toggle-wind-anim" checked />
           💨 Animation du vent
@@ -500,6 +533,7 @@
         <p class="muted" style="margin-top:4px">En mode forcé, aucun repli automatique : si la source choisie échoue, ça s'affiche clairement au lieu d'être masqué. La grille de vent (animation) reste sur Open-Meteo dans tous les cas.</p>
       </div>
       <div class="panel">
+        <h3>✈️ Suivi aérien</h3>
         <label class="toggle-row">
           <input type="checkbox" id="toggle-planes" />
           ✈️ Suivi aérien (ADS-B)
@@ -552,6 +586,7 @@
         <div id="planes-list" style="max-height:220px;overflow-y:auto"></div>
       </div>
       <div class="panel">
+        <h3>🔥 Feux et détections</h3>
         <label class="toggle-row">
           <input type="checkbox" id="toggle-fires" checked />
           Afficher les feux
@@ -587,16 +622,18 @@
         </label>
         <p class="muted" style="margin-top:6px">Composition « Fire Temperature RGB » d'EUMETView, résolution 500 m, une image toutes les 10 minutes. Suit le curseur de la frise : appuie sur ▶ pour l'animer. Les feux intenses apparaissent en jaune-blanc, les plus faibles en rouge. Image blanche la nuit : ce capteur utilise la lumière solaire réfléchie.</p>
         <label class="toggle-row" style="margin-top:10px;font-size:11px">
-          <input type="checkbox" id="toggle-stats-bar" checked />
+          <input type="checkbox" id="toggle-stats-bar" />
           📊 Bandeau de statistiques
         </label>
         <p class="muted" style="margin-top:6px">Détections, surface estimée, puissance cumulée et foyers récents pour la fenêtre affichée.</p>
       </div>
       <div class="panel">
+        <h3>💨 Passage de la fumée</h3>
         <button id="toggle-smoke-check" style="width:100%;justify-content:center;padding:8px">💨 Vérifier le passage de la fumée</button>
         <p class="muted" style="margin-top:6px">Active, puis clique n'importe où sur la carte : estime si le foyer le plus proche pourrait envoyer de la fumée à cet endroit, avec une heure d'arrivée approximative.</p>
       </div>
       <div class="panel">
+        <h3>☁️ Imagerie satellite</h3>
         <label class="toggle-row">
           <input type="checkbox" id="toggle-clouds" />
           ☁️ Nuages et fumées
@@ -2826,13 +2863,39 @@ function isNarrowScreen() {
   return window.matchMedia("(max-width: 820px)").matches;
 }
 
+// Transforme chaque panneau en section repliable : le <h3> devient le <summary> cliquable.
+// Fait en JavaScript plutot qu'en HTML pour que tout nouveau panneau ajoute plus tard beneficie
+// automatiquement du meme comportement, sans avoir a y penser.
+function makePanelsCollapsible() {
+  document.querySelectorAll("#sidebar .panel").forEach(panel => {
+    if (panel.tagName.toLowerCase() === "details") return; // deja converti
+    const h3 = panel.querySelector("h3");
+    if (!h3) return;
+
+    const details = document.createElement("details");
+    details.className = panel.className;
+    const summary = document.createElement("summary");
+    summary.textContent = h3.textContent;
+    details.appendChild(summary);
+    h3.remove();
+    while (panel.firstChild) details.appendChild(panel.firstChild);
+    panel.replaceWith(details);
+  });
+}
+
 sidebarToggleEl.addEventListener("click", () => {
-  sidebarEl.classList.toggle("open");
+  // Sur grand ecran on masque/affiche la colonne ; sur mobile on ouvre/ferme le tiroir.
+  if (isNarrowScreen()) sidebarEl.classList.toggle("open");
+  else sidebarEl.classList.toggle("collapsed");
 });
 
 // Referme le tiroir apres avoir coche une option, pour laisser voir la carte.
-sidebarEl.addEventListener("change", () => {
-  if (isNarrowScreen()) setTimeout(() => sidebarEl.classList.remove("open"), 250);
+sidebarEl.addEventListener("change", (e) => {
+  // Seules les cases a cocher referment le tiroir. Un clic sur un titre de section ou un
+  // menu deroulant ne doit pas le fermer, sinon on ne pourrait plus rien parcourir.
+  if (e.target && e.target.type === "checkbox" && isNarrowScreen()) {
+    setTimeout(() => sidebarEl.classList.remove("open"), 250);
+  }
 });
 
 // Un clic sur la carte referme aussi le tiroir : geste naturel pour revenir a la vue.
@@ -2859,7 +2922,9 @@ const HELP_MIN_LENGTH = 45;  // abaisse a 45 : a 60, le texte du curseur d'opaci
 function collapseHelpTexts() {
   document.querySelectorAll(".panel p.muted").forEach(p => {
     if (p.id) return;                                   // contenu dynamique : ne pas masquer
-    if (p.closest("details")) return;                   // deja replie
+    if (p.closest("details.help")) return;              // deja replie
+    // NB : on cible "details.help" et non "details" tout court — depuis que les panneaux
+    // eux-memes sont des <details>, un test generique aurait ignore tous les paragraphes.
     if ((p.textContent || "").trim().length < HELP_MIN_LENGTH) return;
 
     const details = document.createElement("details");
@@ -2997,7 +3062,7 @@ async function fetchFires() {
 
 // --- Bandeau de statistiques ---------------------------------------------------------------
 // Toutes ces valeurs sont des ESTIMATIONS calculees sur les detections de la fenetre affichee.
-let statsBarEnabled = true;
+let statsBarEnabled = false; // desactive par defaut : la carte reste degagee
 
 // Surface : chaque detection couvre un pixel capteur (VIIRS 375 m ~ 14 ha, MODIS 1 km ~ 100 ha).
 // Additionner betement les pixels surestimerait fortement, car plusieurs satellites reperent
@@ -3645,7 +3710,11 @@ function loadApp(key) {
   applyShareUrlIfPresent(); // restaure la vue si l'URL contient un lien de partage
   // Repliage APRES la restauration du lien partage : celui-ci peut cocher des options
   // supplementaires, dont les explications doivent etre repliees elles aussi.
+  makePanelsCollapsible(); // sections repliables : seuls les titres sont visibles au depart
   collapseHelpTexts();
+  // Barre laterale repliee par defaut : la carte occupe tout l'ecran a l'ouverture,
+  // le bouton "Calques" permet de la faire apparaitre a la demande.
+  sidebarEl.classList.add("collapsed");
   syncAgeLegend();           // un lien partage peut avoir active une autre palette
   requestAnimationFrame(async () => {
     resizeWindCanvas();
