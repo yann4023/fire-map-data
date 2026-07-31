@@ -51,6 +51,16 @@ MET_NO_LON = -0.58
 MET_NO_USER_AGENT = "fire-map-personal-project (contact: yann4023@hotmail.com)"
 MET_NO_CACHE_SECONDS = 30 * 60  # 30 min : les prévisions met.no ne changent pas assez vite pour justifier plus fréquent
 
+# --- Proxy NASA FIRMS -----------------------------------------------------------------------
+# Permet aux visiteurs d'utiliser la carte SANS avoir leur propre cle : le serveur interroge
+# FIRMS avec la cle du site, comme le font les autres cartes publiques du domaine. La cle reste
+# cote serveur, jamais exposee au navigateur.
+# A definir en variable d'environnement (voir configuration du service systemd), jamais en dur.
+FIRMS_MAP_KEY = os.environ.get("FIRMS_MAP_KEY", "")
+FIRMS_CACHE_SECONDS = 10 * 60  # FIRMS se met a jour toutes les ~15 min : inutile d'interroger plus
+                               # souvent, et cela protege le quota partage par tous les visiteurs.
+_firms_cache = {}  # "source|bbox|days" -> {"data": csv, "fetched_at": ts}
+
 _wind_cache = {"data": None, "fetched_at": 0}
 
 
@@ -261,6 +271,23 @@ def fetch_eumetsat_fires():
     return result
 
 
+def fetch_firms_csv(source, bbox, days):
+    if not FIRMS_MAP_KEY:
+        raise RuntimeError("FIRMS_MAP_KEY non definie (variable d'environnement manquante).")
+    key = f"{source}|{bbox}|{days}"
+    now = time.time()
+    hit = _firms_cache.get(key)
+    if hit and now - hit["fetched_at"] < FIRMS_CACHE_SECONDS:
+        return hit["data"]
+
+    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_MAP_KEY}/{source}/{bbox}/{days}"
+    req = urllib.request.Request(url, headers={"User-Agent": "fire-map-collector/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        csv_text = resp.read().decode("utf-8", errors="replace")
+    _firms_cache[key] = {"data": csv_text, "fetched_at": now}
+    return csv_text
+
+
 # --- État partagé entre la boucle de collecte et le serveur HTTP ---
 lock = threading.Lock()
 recent_snapshots = []  # liste des instantanés des IN_MEMORY_WINDOW_SECONDS dernières secondes
@@ -310,6 +337,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(fetch_met_no_wind())
             except Exception as e:
                 print(f"Erreur proxy met.no : {e}")
+                self.send_response(502)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+        elif path == "/fires":
+            # Relaie NASA FIRMS avec la cle du serveur : les visiteurs n'ont pas besoin
+            # d'avoir la leur. Reponse mise en cache pour proteger le quota partage.
+            try:
+                params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                source = (params.get("source") or [""])[0]
+                bbox = (params.get("bbox") or [""])[0]
+                days = (params.get("days") or ["2"])[0]
+                # Liste blanche : evite que l'endpoint serve de relais ouvert vers n'importe
+                # quelle URL FIRMS construite par un tiers.
+                allowed = {"VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"}
+                if source not in allowed or not bbox or not days.isdigit():
+                    self.send_response(400)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    return
+                body = fetch_firms_csv(source, bbox, days).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                print(f"Erreur proxy FIRMS : {e}")
                 self.send_response(502)
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
