@@ -2746,7 +2746,8 @@ document.getElementById("raster-opacity").addEventListener("input", (e) => {
 // paragraphe explicatif dans un menu deroulant ferme par defaut.
 // Sont volontairement EXCLUS : les paragraphes portant un id (valeurs vivantes comme l'indice
 // de qualite de l'air) et les textes tres courts, qui sont des libelles et non des explications.
-const HELP_MIN_LENGTH = 60;
+const HELP_MIN_LENGTH = 45;  // abaisse a 45 : a 60, le texte du curseur d'opacite (56 caracteres)
+                             // restait seul deplie et cassait l'uniformite du panneau.
 
 function collapseHelpTexts() {
   document.querySelectorAll(".panel p.muted").forEach(p => {
@@ -3210,8 +3211,6 @@ function applyBaseLayers() {
 document.getElementById("toggle-ign-ortho").addEventListener("change", (e) => {
   ignEnabled = e.target.checked;
   applyBaseLayers();
-  collapseHelpTexts(); // replie les textes de contexte des l'ouverture
-  syncAgeLegend(); // la legende doit refleter la palette active des le demarrage
 });
 
 document.getElementById("toggle-labels").addEventListener("change", (e) => {
@@ -3537,6 +3536,9 @@ function loadApp(key) {
   // (ortho IGN > Sentinel-2 > OSM) et superpose les toponymes si demande.
   applyBaseLayers();
   applyShareUrlIfPresent(); // restaure la vue si l'URL contient un lien de partage
+  // Repliage APRES la restauration du lien partage : celui-ci peut cocher des options
+  // supplementaires, dont les explications doivent etre repliees elles aussi.
+  collapseHelpTexts();
   syncAgeLegend();           // un lien partage peut avoir active une autre palette
   requestAnimationFrame(async () => {
     resizeWindCanvas();
