@@ -614,7 +614,7 @@
       <div class="panel">
         <h3>✈️ Suivi aérien</h3>
         <label class="toggle-row">
-          <input type="checkbox" id="toggle-planes" />
+          <input type="checkbox" id="toggle-planes" checked />
           ✈️ Suivi aérien (ADS-B)
         </label>
         <p class="muted" style="margin-top:6px">Par défaut, seuls les appareils d'intérêt sont affichés (Sécurité Civile, Gendarmerie/Police, militaires) — décoche pour voir tout le trafic ADS-B.</p>
@@ -1031,7 +1031,7 @@ async function fetchWind() {
 const WIND_PROXY_URL = `${API_BASE}/wind?key=${API_SHARED_KEY}`;
 
 let planeMarkers = [];
-let planesEnabled = false;
+let planesEnabled = true; // actif par defaut
 let planesLowAltOnly = false;
 let planesShowSecu = true;
 let planesShowGendarme = true;
@@ -3833,6 +3833,14 @@ function loadApp(key) {
   // Barre laterale repliee par defaut : la carte occupe tout l'ecran a l'ouverture,
   // le bouton "Calques" permet de la faire apparaitre a la demande.
   sidebarEl.classList.add("collapsed");
+
+  // Les calques coches par defaut doivent declencher leur propre initialisation : cocher la
+  // case dans le HTML n'execute pas le gestionnaire "change", ou vivent le chargement des
+  // donnees et les minuteurs. Sans cela, le suivi aerien resterait coche mais inactif.
+  ["toggle-planes"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.checked) el.dispatchEvent(new Event("change"));
+  });
   syncAgeLegend();           // un lien partage peut avoir active une autre palette
   requestAnimationFrame(async () => {
     resizeWindCanvas();
