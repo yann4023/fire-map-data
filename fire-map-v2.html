@@ -15,7 +15,10 @@
     background: #0a0e14;
     color: #e2e8f0;
   }
-  #app { display: flex; flex-direction: column; height: 100vh; }
+  /* 100dvh (dynamic viewport height) au lieu de 100vh : sur mobile, 100vh ignore les barres
+     du navigateur, qui recouvrent alors le bas de la page — la frise devenait inaccessible.
+     La regle 100vh reste en repli pour les navigateurs qui ne connaissent pas dvh. */
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   header {
     display: flex;
     align-items: center;
@@ -286,7 +289,9 @@
     }
     #stats-bar .stat-val { font-size: 13px; }
     #stats-bar .stat-lbl { font-size: 9px; }
-    .legend { max-width: 46vw; font-size: 10px; }
+    .legend-stack { top: 8px; right: 8px; max-width: 60vw; }
+    .legend { font-size: 10px; }
+    .legend[open] { width: 100%; }
     #compass { width: 60px; height: 60px; bottom: 150px; right: 8px; }
     #compass svg { width: 60px; height: 60px; }
 
@@ -305,7 +310,9 @@
     #wind-display { display: none; }
     .leaflet-control-attribution { max-width: 70vw; }
     .ts-btn { display: none; }   /* vitesses de lecture : rarement utiles au doigt */
-    .legend { display: none; }   /* la legende prend trop de place sur un petit ecran */
+    /* On garde la legende accessible : les deux volets sont simplement replies
+       par defaut (voir le script), au lieu d'etre supprimes de l'affichage. */
+    .legend-stack { max-width: 68vw; }
     #compass { display: none; }
   }
 
@@ -408,19 +415,49 @@
     margin: 10px 12px;
   }
   #map .leaflet-container { background: #0d1520; }
-  .legend {
+  /* Les deux volets sont empiles dans un conteneur positionne ; chacun se replie
+     independamment, on peut donc garder l'intensite ouverte et l'anciennete fermee. */
+  .legend-stack {
     position: absolute;
     top: 14px;
     right: 14px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+  }
+  .legend {
     background: rgba(10, 14, 20, 0.85);
     border: 1px solid #1e293b;
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 5px 9px;
     font-size: 11px;
-    display: block;
-    width: 200px;
-    z-index: 1000;
+    width: 180px;
   }
+  /* Repliee, chaque volet ne doit occuper que la place de son titre — d'ou la largeur auto. */
+  .legend:not([open]) { width: auto; }
+  .legend > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .legend > summary::-webkit-details-marker { display: none; }
+  .legend > summary::before {
+    content: "\25B8";
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+  .legend[open] > summary::before { transform: rotate(90deg); }
+  .legend[open] > summary { margin-bottom: 6px; }
   .legend-title { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
   .legend-gradient-bar {
     height: 8px;
@@ -433,7 +470,9 @@
     position: absolute;
     left: 14px;
     right: 14px;
-    bottom: 12px;
+    /* env(safe-area-inset-bottom) : evite que la frise passe sous l'encoche ou la barre
+       gestuelle des telephones recents. Vaut 0 sur les appareils sans encoche. */
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: 1000;
     background: rgba(10, 14, 20, 0.9);
     border: 1px solid #1e293b;
@@ -750,18 +789,22 @@
         </svg>
         <div id="compass-label">—</div>
       </div>
-      <div class="legend">
-        <div class="legend-title">Intensité du feu (FRP, MW)</div>
-        <div class="legend-gradient-bar"></div>
-        <div class="legend-ticks">
-          <span>1</span><span>10</span><span>50</span><span>800+</span>
-        </div>
-        <div id="fire-count" style="margin-top:6px;color:#94a3b8"></div>
-        <div class="legend-title" style="margin-top:8px" id="legend-age-title">En direct : actif → probablement éteint</div>
-        <div class="legend-gradient-bar" id="legend-age-bar" style="background:linear-gradient(to right, #ff7a00, #64748b)"></div>
-        <div class="legend-ticks">
-          <span>maintenant</span><span id="legend-age-max">12h</span>
-        </div>
+      <div class="legend-stack" id="legend-box">
+        <details class="legend" id="legend-intensity">
+          <summary id="legend-summary">Intensité</summary>
+          <div class="legend-gradient-bar"></div>
+          <div class="legend-ticks">
+            <span>1</span><span>10</span><span>50</span><span>800+</span>
+          </div>
+          <div id="fire-count" style="margin-top:4px;color:#94a3b8"></div>
+        </details>
+        <details class="legend" id="legend-age">
+          <summary id="legend-age-title">Ancienneté</summary>
+          <div class="legend-gradient-bar" id="legend-age-bar" style="background:linear-gradient(to right, #ff7a00, #64748b)"></div>
+          <div class="legend-ticks">
+            <span>maintenant</span><span id="legend-age-max">12h</span>
+          </div>
+        </details>
       </div>
       <div id="timeline-bar">
         <button id="timeline-play" title="Lecture">▶</button>
@@ -2085,6 +2128,10 @@ function renderFiresForWindow() {
   renderSmokePlumes(cursorTs);
 
   document.getElementById("fire-count").textContent = `${visibleRows.length} détection(s) (fenêtre ${timelineWindowHours} h)`;
+  // Le resume porte le nombre de detections : replie, il reste donc informatif et evite
+  // d'avoir a rouvrir la legende pour connaitre le chiffre principal.
+  const legendSummary = document.getElementById("legend-summary");
+  if (legendSummary) legendSummary.textContent = `Intensité · ${visibleRows.length} détection(s)`;
   const ageMaxEl = document.getElementById("legend-age-max");
   if (ageMaxEl) ageMaxEl.textContent = `${timelineWindowHours}h`;
   updateStatsBar(visibleRows, cursorTs);
@@ -3160,10 +3207,14 @@ function syncAgeLegend() {
       .map(st => `${rgbHex(st.rgb)} ${(st.at * 100).toFixed(0)}%`)
       .join(", ");
     bar.style.background = `linear-gradient(to right, ${stops})`;
-    title.textContent = "Progression du feu : front actif → refroidi";
+    // Libelles courts : ce titre est desormais l'en-tete d'un volet repliable, pas une
+    // ligne de texte. La phrase complete reste dans l'infobulle.
+    title.textContent = "Progression du feu";
+    title.title = "Front actif → terrain refroidi";
   } else {
     bar.style.background = "linear-gradient(to right, #ff7a00, #64748b)";
-    title.textContent = "En direct : actif → probablement éteint";
+    title.textContent = "Ancienneté";
+    title.title = "En direct : actif → probablement éteint";
   }
 }
 
@@ -3741,6 +3792,15 @@ function loadApp(key) {
   // Repliage APRES la restauration du lien partage : celui-ci peut cocher des options
   // supplementaires, dont les explications doivent etre repliees elles aussi.
   makePanelsCollapsible(); // sections repliables : seuls les titres sont visibles au depart
+  // Legende repliee d'office sur ecran etroit : depliee, elle couvrait la moitie de la carte
+  // sur telephone. Sur grand ecran elle reste ouverte, la place ne manque pas.
+  // Sur grand ecran les deux volets sont ouverts ; sur telephone ils restent fermes,
+  // depliables a la demande — depliee, la legende couvrait la moitie de la carte.
+  const wide = !isNarrowScreen();
+  ["legend-intensity", "legend-age"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.open = wide;
+  });
   collapseHelpTexts();
   // Barre laterale repliee par defaut : la carte occupe tout l'ecran a l'ouverture,
   // le bouton "Calques" permet de la faire apparaitre a la demande.
