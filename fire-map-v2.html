@@ -420,7 +420,10 @@
     font-size: 12px;
     margin: 10px 12px;
   }
-  #map .leaflet-container { background: #0d1520; }
+  /* Leaflet pose la classe "leaflet-container" sur #map LUI-MEME : le selecteur descendant
+     "#map .leaflet-container" ne correspondait donc a rien, et le fond restait blanc la ou
+     aucune tuile n'est disponible (mer, hors couverture IGN). */
+  #map.leaflet-container { background: #0d1520; }
   /* Les deux volets sont empiles dans un conteneur positionne ; chacun se replie
      independamment, on peut donc garder l'intensite ouverte et l'anciennete fermee. */
   .legend-stack {
@@ -3450,6 +3453,12 @@ function applyBaseLayers() {
   [ignLayer, s2Layer, osmLayer].forEach(l => { if (l && map.hasLayer(l)) map.removeLayer(l); });
 
   if (ignEnabled) {
+    // L'ortho IGN ne couvre que le territoire terrestre francais. On garde donc Sentinel-2
+    // en dessous (zIndex inferieur) pour habiller la mer et l'etranger, au lieu de laisser
+    // un vide. IGN passe au-dessus la ou il a des donnees.
+    ensureS2Layer();
+    s2Layer.setZIndex(90);
+    s2Layer.addTo(map);
     if (!ignLayer) {
       ignLayer = L.tileLayer(IGN_URL, {
         attribution: 'Ortho-photo &copy; <a href="https://geoservices.ign.fr/">IGN</a> / Géoplateforme',
@@ -3458,6 +3467,8 @@ function applyBaseLayers() {
     }
     ignLayer.addTo(map);
   } else if (s2Enabled) {
+    ensureS2Layer();
+    s2Layer.setZIndex(100);
     ensureS2Layer();
     s2Layer.addTo(map);
   } else {
