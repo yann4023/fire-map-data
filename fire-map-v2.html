@@ -878,7 +878,22 @@ const WATCHLIST_REGISTRATIONS = [
   { reg: "VH-OUM", label: "Air Tractor AT-802F Fire Boss (suivi personnalisé)", icon: "🌾", category: "secu" }
 ];
 
-function identifySecuCivile(flightRaw, reg, dbFlags) {
+// Identification par TYPE d'aeronef (code ICAO du champ "t"), independamment de l'indicatif et
+// du pays d'immatriculation. C'est le critere le plus fiable : un Canadair reste un Canadair,
+// qu'il soit francais, croate, espagnol ou luxembourgeois — alors que les indicatifs varient
+// d'un pays a l'autre et que se baser sur le prefixe d'immatriculation (EC-, LX-...) attraperait
+// tous les avions civils de ces pays.
+const FIREFIGHTING_TYPES = {
+  AT8T: { label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾" },
+  AT8B: { label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾" },
+  A802: { label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾" },
+  CL2T: { label: "Canadair CL-415 (écopage)", icon: "🛩️" },
+  CL41: { label: "Canadair CL-415 (écopage)", icon: "🛩️" },
+  CL21: { label: "Canadair CL-215 (écopage)", icon: "🛩️" },
+  CL15: { label: "Canadair CL-215 (écopage)", icon: "🛩️" }
+};
+
+function identifySecuCivile(flightRaw, reg, dbFlags, acType) {
   const flight = (flightRaw || "").trim().toUpperCase();
   const regUp = (reg || "").trim().toUpperCase();
   const secuMatch = SECU_CIVILE_CALLSIGNS.find(c => flight.startsWith(c.prefix));
@@ -887,6 +902,19 @@ function identifySecuCivile(flightRaw, reg, dbFlags) {
   if (stateMatch) return stateMatch;
   const watchMatch = WATCHLIST_REGISTRATIONS.find(w => regUp === w.reg);
   if (watchMatch) return watchMatch;
+
+  // Indicatif "CAN" suivi d'un chiffre (ex: CAN11) : Canadair de renfort. On exige le chiffre
+  // pour ne pas attraper d'autres indicatifs commencant par CAN.
+  if (/^CAN\d/.test(flight)) {
+    return { prefix: "CAN", label: "Canadair CL-415 (renfort)", icon: "🛩️", category: "secu" };
+  }
+
+  // Type d'aeronef reconnu comme bombardier d'eau : couvre les appareils etrangers dont
+  // l'indicatif est simplement leur immatriculation (ex: LXAFC au Luxembourg, ECNDU en Espagne).
+  const typeMatch = FIREFIGHTING_TYPES[(acType || "").trim().toUpperCase()];
+  if (typeMatch) {
+    return { prefix: "", label: typeMatch.label, icon: typeMatch.icon, category: "secu" };
+  }
   // Air Tractor AT-802F Fire Boss loués, immatriculés à l'étranger (Australie VH-, Suède SE-) —
   // utilisés indifféremment comme indicatif (ex: "VH8FR") ou comme immatriculation.
   if (flight.startsWith("VH") || regUp.startsWith("VH-") || regUp.startsWith("SE-")) {
@@ -991,7 +1019,7 @@ function mergeSnapshotIntoHistory(ts, aircraftList) {
     // le reste du trafic (vols de ligne en croisière) n'a aucun usage ici (trails, largages) et
     // gonflait planeHistory pour rien : jusqu'à ~150 avions stockés alors que seuls quelques-uns
     // comptent. C'est la cause principale du ralentissement.
-    const secu = identifySecuCivile(a.flight, a.r, a.dbFlags);
+    const secu = identifySecuCivile(a.flight, a.r, a.dbFlags, a.t);
     if (!secu) return;
 
     if (!mergedTsByHex.has(a.hex)) mergedTsByHex.set(a.hex, new Set());
@@ -1027,7 +1055,7 @@ function applyLiveSnapshots(snapshots, sourceLabel) {
     const list = (latest.ac || [])
       .filter(a => typeof a.lat === "number" && typeof a.lon === "number")
       .filter(a => !planesLowAltOnly || (typeof a.alt_baro === "number" && a.alt_baro < 5000))
-      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags) }))
+      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags, a.t) }))
       .filter(a => planePassesCategoryFilter(a.secu));
     latestPlanesByHex = new Map(list.map(a => [a.hex, a]));
     renderPlanesList();
@@ -1291,7 +1319,7 @@ async function fetchPlanes() {
     const list = (data.ac || [])
       .filter(a => typeof a.lat === "number" && typeof a.lon === "number")
       .filter(a => !planesLowAltOnly || (typeof a.alt_baro === "number" && a.alt_baro < 5000))
-      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags) }))
+      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags, a.t) }))
       .filter(a => planePassesCategoryFilter(a.secu));
 
     latestPlanesByHex = new Map(list.map(a => [a.hex, a]));
@@ -1330,9 +1358,14 @@ const DROP_SCAN_LOOKBACK_MS = 20 * 60 * 1000; // fenêtre de rescan (large marge
 // Produit déduit du type d'appareil, comme GISFire : Air Tractor = eau, Dash 8 = retardant.
 function bomberProductType(secu) {
   if (!secu) return null;
-  if (["PELICAN", "ABEL", "TRACT", "TRACK", "TGT", "HRZ"].includes(secu.prefix)) return "eau";
+  if (["PELICAN", "ABEL", "TRACT", "TRACK", "TGT", "HRZ", "CAN"].includes(secu.prefix)) return "eau";
   if (secu.prefix === "MILAN") return "retardant";
-  if (secu.label && secu.label.includes("Fire Boss")) return "eau"; // immatriculations étrangères en watchlist
+  // Les appareils identifies par leur TYPE (etrangers, indicatif = immatriculation) ont un
+  // prefixe vide : on se base alors sur le libelle, sinon leurs largages seraient ignores
+  // alors meme qu'ils sont suivis sur la carte.
+  const label = secu.label || "";
+  if (label.includes("Air Tractor") || label.includes("Canadair") || label.includes("Fire Boss")) return "eau";
+  if (label.includes("Dash 8")) return "retardant";
   return null; // hélicoptères (DRAG/PUMA) et autres catégories : pas de profil de largage fiable ici
 }
 
