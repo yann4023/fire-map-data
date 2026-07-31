@@ -1736,7 +1736,13 @@ document.getElementById("toggle-drops").addEventListener("change", (e) => {
 
 document.getElementById("toggle-planes").addEventListener("change", (e) => {
   planesEnabled = e.target.checked;
-  document.getElementById("planes-list-panel").style.display = planesEnabled ? "block" : "none";
+  const planesPanel = document.getElementById("planes-list-panel");
+  if (planesPanel) {
+    planesPanel.style.display = planesEnabled ? "block" : "none";
+    // Le panneau etant devenu une section repliable, l'afficher ne suffit pas : il faut
+    // aussi le deplier, sinon seul son titre apparaitrait.
+    if (planesEnabled && "open" in planesPanel) planesPanel.open = true;
+  }
   clearInterval(planesTimer);
   clearInterval(planesHistoryTimer);
   if (planesEnabled) {
@@ -2950,7 +2956,11 @@ function makePanelsCollapsible() {
     if (!h3) return;
 
     const details = document.createElement("details");
-    details.className = panel.className;
+    // Recopie TOUS les attributs (id, style, data-*), pas seulement la classe : le panneau
+    // de la liste des avions porte id="planes-list-panel" et un style inline, sur lesquels
+    // s'appuie le code. Les perdre rendait getElementById nul et faisait planter le
+    // gestionnaire du suivi aerien des sa premiere ligne.
+    Array.from(panel.attributes).forEach(attr => details.setAttribute(attr.name, attr.value));
     const summary = document.createElement("summary");
     summary.textContent = h3.textContent;
     details.appendChild(summary);
