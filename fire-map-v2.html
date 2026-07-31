@@ -1,0 +1,3353 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Carte des feux — prototype v2</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a0e14;
+    color: #e2e8f0;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e293b;
+    background: #0d1420;
+    z-index: 10;
+  }
+  header h1 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+  .flame { color: #f97316; }
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: #94a3b8;
+    flex-wrap: wrap;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: #1e293b;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  button:hover { background: #334155; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #body-layout { flex: 1; display: flex; overflow: hidden; }
+  #sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    border-right: 1px solid #1e293b;
+    background: #0d1420;
+    padding: 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .panel {
+    background: #111823;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 12px;
+  }
+  .panel h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+  }
+  .panel.official p { margin: 6px 0; line-height: 1.4; }
+  .panel.official a { color: #fb923c; text-decoration: none; font-size: 12px; }
+  .muted { color: #64748b; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .stat-row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .plane-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 6px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    background: #0d1420;
+    font-size: 11px;
+  }
+  .plane-row:hover { background: #16202f; }
+  .plane-row .pr-checkbox { flex-shrink: 0; }
+  .plane-row .pr-icon-box {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #1e293b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .plane-row.secu .pr-icon-box { background: rgba(251, 146, 60, 0.15); }
+  .plane-row .pr-info { flex: 1; min-width: 0; }
+  .plane-row .pr-call {
+    color: #e2e8f0;
+    font-weight: 600;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .plane-row .pr-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    box-shadow: 0 0 4px #22c55e;
+  }
+  .plane-row .pr-detail { color: #64748b; font-size: 10px; margin-top: 1px; }
+  .plane-row.secu .pr-call { color: #fb923c; }
+  .planes-bulk-btn { border-radius: 20px !important; font-weight: 500; }
+  #map { flex: 1; position: relative; }
+  #wind-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 450;
+    pointer-events: none;
+  }
+  #compass {
+    position: absolute;
+    right: 14px;
+    bottom: 90px;
+    z-index: 460;
+    width: 84px;
+    height: 84px;
+    background: rgba(10, 14, 20, 0.82);
+    border: 1px solid #334155;
+    border-radius: 50%;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #compass.hidden { display: none; }
+  #stats-bar {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 12px;
+    z-index: 460;
+    display: flex;
+    gap: 18px;
+    padding: 8px 16px;
+    background: rgba(10, 14, 20, 0.85);
+    border: 1px solid #334155;
+    border-radius: 10px;
+    pointer-events: none;
+  }
+  #stats-bar.hidden { display: none; }
+  #stats-bar .stat { display: flex; flex-direction: column; align-items: center; }
+  #stats-bar .stat-val { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+  #stats-bar .stat-lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+  #compass-label {
+    position: absolute;
+    bottom: -20px;
+    font-size: 10px;
+    color: #94a3b8;
+    white-space: nowrap;
+    text-align: center;
+  }
+  #gate {
+    position: fixed;
+    inset: 0;
+    background: #0a0e14;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 100;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    background: #111823;
+    border: 1px solid #1e293b;
+    border-radius: 14px;
+    padding: 26px;
+  }
+  .card h2 {
+    font-size: 17px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+  }
+  .card p { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  .card a { color: #fb923c; }
+  .note {
+    display: flex;
+    gap: 8px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 11px;
+    color: #fcd34d;
+    margin: 12px 0;
+  }
+  input {
+    width: 100%;
+    background: #0a0e14;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #e2e8f0;
+    margin-bottom: 12px;
+  }
+  input:focus { outline: none; border-color: #f97316; }
+  .submit {
+    width: 100%;
+    background: #ea580c;
+    color: #fff;
+    font-weight: 600;
+    padding: 10px;
+    justify-content: center;
+  }
+  .submit:hover { background: #f97316; }
+  .submit:disabled { background: #334155; }
+  #error-banner {
+    display: none;
+    margin: 10px 14px 0;
+    background: rgba(220, 38, 38, 0.15);
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #fca5a5;
+  }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: #111823;
+    color: #e2e8f0;
+  }
+  .leaflet-popup-content {
+    font-size: 12px;
+    margin: 10px 12px;
+  }
+  #map .leaflet-container { background: #0d1520; }
+  .legend {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: rgba(10, 14, 20, 0.85);
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    display: block;
+    width: 200px;
+    z-index: 1000;
+  }
+  .legend-title { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+  .legend-gradient-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(to right, #fef08a, #f97316, #dc2626, #7f1d1d);
+  }
+  .legend-ticks { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-top: 3px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  #timeline-bar {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 20px;
+    z-index: 1000;
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+  }
+  #timeline-play {
+    background: #ea580c;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  #timeline-play:hover { background: #f97316; }
+  .timeline-window-btns { display: flex; gap: 4px; flex-shrink: 0; }
+  #timeline-live-btn {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 6px 10px;
+    background: #1e293b;
+    color: #64748b;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+  #timeline-live-btn.active {
+    background: rgba(220, 38, 38, 0.15);
+    color: #ef4444;
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.4);
+  }
+  #timeline-live-btn.active .live-dot {
+    animation: live-pulse 1.5s infinite;
+  }
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .tw-btn { padding: 4px 8px; font-size: 11px; background: #1e293b; }
+  .tw-btn.active { background: #ea580c; color: #fff; }
+  .timeline-speed-btns { display: flex; gap: 4px; flex-shrink: 0; }
+  .ts-btn { padding: 4px 7px; font-size: 11px; background: #1e293b; }
+  .ts-btn.active { background: #2563eb; color: #fff; }
+  #timeline-slider { flex: 1; accent-color: #f97316; }
+  #timeline-label { flex-shrink: 0; min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="card">
+    <h2><span class="flame">🔥</span> Carte des feux — prototype</h2>
+    <p>Interroge directement l'API NASA FIRMS. Clé <strong>MAP_KEY</strong> gratuite et personnelle requise :</p>
+    <p><a href="https://firms.modaps.eosdis.nasa.gov/api/map_key/" target="_blank" rel="noreferrer">firms.modaps.eosdis.nasa.gov/api/map_key/</a></p>
+    <div class="note">⚠️ Je ne peux pas garantir que FIRMS accepte les appels directs depuis un navigateur (CORS non documenté). Si ça échoue, un message d'erreur clair l'indiquera.</div>
+    <input id="key-input" type="text" placeholder="Colle ta MAP_KEY ici" />
+    <label class="toggle-row" style="margin-bottom:12px;font-size:12px;color:#94a3b8">
+      <input type="checkbox" id="remember-key" checked />
+      Se souvenir de ma clé sur cet appareil
+    </label>
+    <button class="submit" id="submit-btn" disabled>Charger la carte</button>
+    <p class="muted" id="forget-key-link" style="display:none;margin-top:10px;cursor:pointer;text-decoration:underline">Oublier la clé enregistrée</p>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <h1><span class="flame">🔥</span> Carte des feux — France / Europe</h1>
+    <div class="meta">
+      <span id="wind-display"></span>
+      <span id="last-update"></span>
+      <span id="countdown" class="muted"></span>
+      <button id="refresh-btn">↻ Actualiser</button>
+      <button id="share-btn" title="Copier un lien vers la vue actuelle">🔗 Partager la vue</button>
+      <button id="change-key-btn" title="Changer de clé MAP_KEY">🔑 Changer de clé</button>
+    </div>
+  </header>
+  <div id="error-banner"></div>
+  <div id="body-layout">
+    <aside id="sidebar">
+      <div class="panel">
+        <h3>Détections</h3>
+        <div id="stats-content" class="muted">Chargement…</div>
+      </div>
+      <div class="panel">
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-wind-anim" checked />
+          💨 Animation du vent
+        </label>
+        <p class="muted" style="margin-top:6px">Grille de ~594 points (AROME), historique horaire 48h — flux ré-échantillonné à chaque déplacement/zoom.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-compass" checked />
+          🧭 Boussole
+        </label>
+        <p class="muted" style="margin-top:6px">Affiche en bas à droite la direction vers laquelle souffle le vent au centre de la carte, avec sa vitesse.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-wind-probe" />
+          📍 Sonde de vent au clic
+        </label>
+        <p class="muted" style="margin-top:6px">Clique sur la carte pour connaître la force et l'origine du vent à cet endroit (nœuds, degrés, Beaufort).</p>
+        <label style="display:block;margin-top:8px;font-size:11px;color:#94a3b8">Source du vent ponctuel</label>
+        <select id="wind-source-select" style="width:100%;margin-top:4px;background:#0a0e14;border:1px solid #334155;border-radius:6px;padding:6px;color:#e2e8f0;font-size:11px">
+          <option value="auto" selected>Auto (repli AROME → Open-Meteo → met.no)</option>
+          <option value="arome">Forcer AROME (Open-Meteo)</option>
+          <option value="open-meteo">Forcer Open-Meteo générique</option>
+          <option value="metno">Forcer met.no (via VPS)</option>
+        </select>
+        <p class="muted" style="margin-top:4px">En mode forcé, aucun repli automatique : si la source choisie échoue, ça s'affiche clairement au lieu d'être masqué. La grille de vent (animation) reste sur Open-Meteo dans tous les cas.</p>
+      </div>
+      <div class="panel">
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-planes" />
+          ✈️ Suivi aérien (ADS-B)
+        </label>
+        <p class="muted" style="margin-top:6px">Par défaut, seuls les appareils d'intérêt sont affichés (Sécurité Civile, Gendarmerie/Police, militaires) — décoche pour voir tout le trafic ADS-B.</p>
+        <label class="toggle-row" style="margin-top:6px;font-size:11px">
+          <input type="checkbox" id="toggle-planes-lowalt" />
+          Basse altitude seulement (&lt;5000 ft)
+        </label>
+        <label class="toggle-row" style="margin-top:6px;font-size:11px">
+          <input type="checkbox" id="toggle-cat-secu" checked />
+          🛩️ Sécurité Civile
+        </label>
+        <label class="toggle-row" style="margin-top:4px;font-size:11px">
+          <input type="checkbox" id="toggle-cat-gendarme" checked />
+          🚔 Gendarmerie / Police
+        </label>
+        <label class="toggle-row" style="margin-top:4px;font-size:11px">
+          <input type="checkbox" id="toggle-cat-militaire" checked />
+          ⚔️ Militaire uniquement
+        </label>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-drops" />
+          💧 Largages détectés (bombardiers d'eau)
+        </label>
+        <label style="display:block;margin-top:10px;font-size:11px;color:#94a3b8">Profondeur d'historique (rejeu sur la frise)</label>
+        <select id="plane-history-depth" style="width:100%;margin-top:4px;background:#0a0e14;border:1px solid #334155;border-radius:6px;padding:6px;color:#e2e8f0;font-size:11px">
+          <option value="1">1 heure</option>
+          <option value="6" selected>6 heures</option>
+          <option value="12">12 heures</option>
+          <option value="24">24 heures</option>
+          <option value="48">48 heures</option>
+        </select>
+        <p class="muted" style="margin-top:4px">Recule le curseur de la frise pour rejouer les mouvements passés, traînées comprises. Plus la profondeur est grande, plus le chargement initial est long. Un point toutes les 15 s est conservé, suffisant pour tracer les trajectoires.</p>
+        <p class="muted" style="margin-top:6px">Aucun largage n'est annoncé par les appareils : ceci est déduit du profil de vol (descente / palier bas / remontée), comme sur GISFire. Zone bleue = eau (Air Tractor, Canadair) · zone rose = retardant (Dash 8). Heuristique, pas une confirmation officielle. Nécessite le suivi aérien activé.</p>
+        <div id="drop-history-panel" style="display:none;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.03em">Historique de session</span>
+            <button id="drop-history-clear" style="font-size:10px;padding:4px 8px">Effacer</button>
+          </div>
+          <div id="drop-history-list" style="max-height:160px;overflow-y:auto;font-size:11px"></div>
+        </div>
+      </div>
+      <div class="panel" id="planes-list-panel" style="display:none">
+        <h3>Moyens aériens détectés</h3>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button id="planes-select-all" class="planes-bulk-btn" style="flex:1;font-size:11px;padding:6px;justify-content:center">Tout afficher</button>
+          <button id="planes-select-none" class="planes-bulk-btn" style="flex:1;font-size:11px;padding:6px;justify-content:center">Tout masquer</button>
+        </div>
+        <div id="planes-list" style="max-height:220px;overflow-y:auto"></div>
+      </div>
+      <div class="panel">
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-fires" checked />
+          Afficher les feux
+        </label>
+        <label class="toggle-row" style="margin-top:6px;font-size:11px">
+          <input type="checkbox" id="toggle-fire-events" checked />
+          ⚪ Événements feu (regroupement)
+        </label>
+        <p class="muted" style="margin-top:6px">Regroupe les détections proches (≤2500 m, ≥3 points) en un seul événement, comme sur GISFire — reproduit en JavaScript côté navigateur.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-progression-colors" />
+          🎨 Progression du feu (5 paliers)
+        </label>
+        <p class="muted" style="margin-top:6px">Jaune vif = front actif, puis orange, rouge, rouge sombre et brun pour les terrains refroidis — retrace les positions successives du feu. Décoche pour revenir au dégradé orange → gris en deux couleurs.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-smoke-plume" />
+          💨 Panache de fumée (estimé)
+        </label>
+        <p class="muted" style="margin-top:6px">Simule une bouffée émise chaque heure depuis chaque foyer notable, transportée dans le vent réel heure par heure — même principe que GISFire. Une estimation, pas une observation satellite : nécessite la grille de vent chargée.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-meteosat" />
+          🛰️ Meteosat · détection rapide
+        </label>
+        <p class="muted" style="margin-top:6px">Satellite géostationnaire (MTG, Meteosat Third Generation), cycle de 5-15 min contre 2-4 passages/jour pour NASA FIRMS — au prix d'une résolution bien plus grossière. Complète FIRMS, ne le remplace pas.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-mtg-imagery" />
+          🔥 Imagerie thermique MTG (10 min)
+        </label>
+        <p class="muted" style="margin-top:6px">Composition « Fire Temperature RGB » d'EUMETView, résolution 500 m, une image toutes les 10 minutes. Suit le curseur de la frise : appuie sur ▶ pour l'animer. Les feux intenses apparaissent en jaune-blanc, les plus faibles en rouge. Image blanche la nuit : ce capteur utilise la lumière solaire réfléchie.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-stats-bar" checked />
+          📊 Bandeau de statistiques
+        </label>
+        <p class="muted" style="margin-top:6px">Détections, surface estimée, puissance cumulée et foyers récents pour la fenêtre affichée.</p>
+      </div>
+      <div class="panel">
+        <button id="toggle-smoke-check" style="width:100%;justify-content:center;padding:8px">💨 Vérifier le passage de la fumée</button>
+        <p class="muted" style="margin-top:6px">Active, puis clique n'importe où sur la carte : estime si le foyer le plus proche pourrait envoyer de la fumée à cet endroit, avec une heure d'arrivée approximative.</p>
+      </div>
+      <div class="panel">
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-clouds" />
+          ☁️ Nuages et fumées
+        </label>
+        <p class="muted" style="margin-top:6px">NASA VIIRS vraie couleur, 250 m — mosaïque quotidienne, publiée avec quelques heures de décalage (pas temps réel). Suit la date du curseur de la frise chronologique.</p>
+      </div>
+      <div class="panel">
+        <h3>🛰️ Fond de carte</h3>
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-ign-ortho" checked />
+          🇫🇷 Ortho-photo IGN (France)
+        </label>
+        <p class="muted" style="margin-top:6px">Photo aérienne BD ORTHO® jusqu'à 20 cm/pixel — bien plus détaillée que Sentinel-2, mais uniquement sur la France. Prioritaire sur les autres fonds quand elle est active. Service Géoplateforme, sans clé API.</p>
+        <label class="toggle-row" style="margin-top:10px">
+          <input type="checkbox" id="toggle-s2cloudless" checked />
+          🌍 Sentinel-2 cloudless (EOX)
+        </label>
+        <p class="muted" style="margin-top:6px">Mosaïque satellite quasi sans nuages, millésime 2024 — le même fond que GISFire. Utilisée si l'ortho IGN est décochée (utile hors de France). Gratuit pour usage non commercial, attribution EOX obligatoire.</p>
+        <label class="toggle-row" style="margin-top:10px">
+          <input type="checkbox" id="toggle-labels" checked />
+          🏷️ Noms de lieux
+        </label>
+        <p class="muted" style="margin-top:6px">Superpose villes, routes et toponymes par-dessus l'imagerie satellite, qui n'en comporte aucun. Sans effet sur le fond OpenStreetMap, qui les contient déjà.</p>
+      </div>
+      <div class="panel">
+        <h3>🇪🇺 EFFIS (Copernicus)</h3>
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-effis-ba" />
+          🔥 Zones brûlées (périmètres)
+        </label>
+        <p class="muted" style="margin-top:6px">Surfaces réellement brûlées, cartographiées par le Joint Research Centre européen. Depuis 2018 l'imagerie Sentinel-2 permet de descendre sous le seuil de 30 ha, couvrant environ 95 % de la surface brûlée dans l'UE. Complète tes points chauds : ceux-ci montrent où ça chauffe, ceci montre ce qui a brûlé.</p>
+        <label class="toggle-row" style="margin-top:10px">
+          <input type="checkbox" id="toggle-effis-fwi" />
+          🌡️ Indice de danger (FWI)
+        </label>
+        <p class="muted" style="margin-top:6px">Fire Weather Index, prévision à 1 jour (modèle ECMWF, ~8 km). Danger météo d'incendie, utile en prévention — ce n'est pas une détection de feu.</p>
+        <label style="display:block;margin-top:10px;font-size:11px;color:#94a3b8">Opacité des calques images</label>
+        <input type="range" id="raster-opacity" min="10" max="100" value="70" style="width:100%;margin-top:4px" />
+        <div id="raster-opacity-value" class="muted" style="font-size:11px">70 %</div>
+        <p class="muted" style="margin-top:6px">S'applique aux calques EFFIS et à l'imagerie NASA GIBS.</p>
+      </div>
+      <div class="panel">
+        <label class="toggle-row">
+          <input type="checkbox" id="toggle-aqi" />
+          💨 Qualité de l'air (indice européen)
+        </label>
+        <p class="muted" style="margin-top:6px">Modèle CAMS Europe via Open-Meteo, mis à jour 2×/jour — indicatif régional, pas une mesure locale précise.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-aqi-probe" />
+          📍 Sonde qualité de l'air au clic
+        </label>
+        <p class="muted" style="margin-top:6px">Clique sur la carte pour obtenir l'indice et les particules à cet endroit précis, au lieu du seul centre de la carte.</p>
+        <div id="aqi-value" class="muted" style="margin-top:6px;display:none"></div>
+      </div>
+      <div class="panel official">
+        <h3>⚠️ Informations officielles</h3>
+        <p class="muted">Cette carte montre des détections satellite, pas des consignes officielles. En cas de danger, suis la préfecture et FR-Alert.</p>
+        <p><strong>09 70 80 90 40</strong><br/><span class="muted">Information du public, 24h/24 (Gironde)</span></p>
+        <a href="https://www.gironde.gouv.fr" target="_blank" rel="noreferrer">Préfecture de la Gironde ↗</a><br/>
+        <a href="https://feuxdeforet.fr/nouvelle-aquitaine/gironde/" target="_blank" rel="noreferrer" style="margin-top:4px;display:inline-block">Signalements citoyens (feuxdeforet.fr) ↗</a>
+      </div>
+    </aside>
+    <div id="map">
+      <canvas id="wind-canvas"></canvas>
+      <div id="stats-bar">
+        <div class="stat"><span class="stat-val" id="stat-detections">—</span><span class="stat-lbl">détections</span></div>
+        <div class="stat"><span class="stat-val" id="stat-area">—</span><span class="stat-lbl">surface estimée</span></div>
+        <div class="stat"><span class="stat-val" id="stat-power">—</span><span class="stat-lbl">puissance cumulée</span></div>
+        <div class="stat"><span class="stat-val" id="stat-recent">—</span><span class="stat-lbl">foyers &lt; 6 h</span></div>
+      </div>
+      <div id="compass" title="Boussole — la flèche indique la direction vers laquelle souffle le vent">
+        <svg viewBox="0 0 100 100" width="84" height="84" aria-label="Boussole">
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#475569" stroke-width="1"/>
+          <text x="50" y="17" fill="#e2e8f0" font-size="12" text-anchor="middle" font-weight="600">N</text>
+          <text x="50" y="91" fill="#64748b" font-size="10" text-anchor="middle">S</text>
+          <text x="88" y="54" fill="#64748b" font-size="10" text-anchor="middle">E</text>
+          <text x="12" y="54" fill="#64748b" font-size="10" text-anchor="middle">O</text>
+          <!-- Flèche du vent : pivote autour du centre, orientée vers où va le vent -->
+          <g id="compass-arrow" transform="rotate(0 50 50)">
+            <line x1="50" y1="68" x2="50" y2="30" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+            <polygon points="50,24 45,34 55,34" fill="#38bdf8"/>
+          </g>
+          <circle cx="50" cy="50" r="2.5" fill="#94a3b8"/>
+        </svg>
+        <div id="compass-label">—</div>
+      </div>
+      <div class="legend">
+        <div class="legend-title">Intensité du feu (FRP, MW)</div>
+        <div class="legend-gradient-bar"></div>
+        <div class="legend-ticks">
+          <span>1</span><span>10</span><span>50</span><span>800+</span>
+        </div>
+        <div id="fire-count" style="margin-top:6px;color:#94a3b8"></div>
+        <div class="legend-title" style="margin-top:8px" id="legend-age-title">En direct : actif → probablement éteint</div>
+        <div class="legend-gradient-bar" id="legend-age-bar" style="background:linear-gradient(to right, #ff7a00, #64748b)"></div>
+        <div class="legend-ticks">
+          <span>maintenant</span><span id="legend-age-max">12h</span>
+        </div>
+      </div>
+      <div id="timeline-bar">
+        <button id="timeline-play" title="Lecture">▶</button>
+        <button id="timeline-live-btn" class="active" title="Revenir à l'état en direct"><span class="live-dot">●</span> En direct</button>
+        <div class="timeline-window-btns">
+          <button class="tw-btn" data-hours="1">1 h</button>
+          <button class="tw-btn" data-hours="6">6 h</button>
+          <button class="tw-btn active" data-hours="12">12 h</button>
+          <button class="tw-btn" data-hours="24">24 h</button>
+          <button class="tw-btn" data-hours="48">48 h</button>
+        </div>
+        <input type="range" id="timeline-slider" min="0" max="100" value="100" />
+        <div class="timeline-speed-btns">
+          <button class="ts-btn" data-speed="0.25">0.25×</button>
+          <button class="ts-btn" data-speed="0.5">0.5×</button>
+          <button class="ts-btn active" data-speed="1">1×</button>
+          <button class="ts-btn" data-speed="2">2×</button>
+          <button class="ts-btn" data-speed="4">4×</button>
+        </div>
+        <span id="timeline-label" class="muted">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Clé partagée avec le proxy nginx/VPS — filtre les robots qui scannent Internet à la recherche
+// d'endpoints ouverts. Ce n'est PAS un vrai secret : elle est visible ici si tu partages ce
+// fichier. Doit correspondre exactement à API_SHARED_KEY côté serveur (variable d'environnement).
+const API_SHARED_KEY = "REMPLACE_PAR_TA_CLE_PARTAGEE";
+
+// Base des appels vers le VPS, choisie automatiquement :
+//  - fichier ouvert en local (file://, localhost) -> on vise le VPS en direct sur le port 8080
+//  - page servie depuis un serveur web -> chemins relatifs /api/..., relayés par nginx
+// Sans ça, un fichier local cherchait "/api/..." sur le disque et échouait avec "Failed to fetch".
+const IS_LOCAL_FILE = location.protocol === "file:" || ["", "localhost", "127.0.0.1"].includes(location.hostname);
+const API_BASE = IS_LOCAL_FILE ? "http://137.74.164.67:8080" : "/api";
+
+const FRANCE_BBOX = "-5.5,41,10,51.5";
+// On combine plusieurs sources FIRMS pour une meilleure couverture qu'un seul satellite.
+// Sources vérifiées comme existant dans la doc FIRMS : VIIRS (NOAA-20, NOAA-21, SNPP) + MODIS.
+const FIRMS_SOURCES = ["VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"];
+let map, mapKey;
+// Vrai si le serveur relaie FIRMS avec sa propre cle : dans ce cas l'ecran d'accueil demandant
+// une cle est inutile et n'est pas affiche.
+let firmsProxyAvailable = false;
+
+async function detectFirmsProxy() {
+  try {
+    const res = await fetch(`${API_BASE}/fires?source=VIIRS_NOAA20_NRT&bbox=${FRANCE_BBOX}&days=1&key=${API_SHARED_KEY}`);
+    firmsProxyAvailable = res.ok;
+  } catch (e) {
+    firmsProxyAvailable = false;
+  }
+  console.log("Proxy FIRMS serveur :", firmsProxyAvailable ? "disponible (aucune cle requise)" : "indisponible (cle personnelle requise)");
+  return firmsProxyAvailable;
+}
+
+// Dégradé continu de couleur selon la FRP, sur échelle logarithmique (comme la légende 1/10/50/800+ de GISFire).
+const FRP_COLOR_STOPS = [
+  { log: 0, rgb: [254, 240, 138] },              // 1 MW   — jaune pâle
+  { log: 1, rgb: [249, 115, 22] },                // 10 MW  — orange
+  { log: Math.log10(50), rgb: [220, 38, 38] },    // 50 MW  — rouge
+  { log: Math.log10(800), rgb: [127, 29, 29] }    // 800+ MW — rouge très profond
+];
+function frpToColor(frpRaw) {
+  const frp = Math.max(1, parseFloat(frpRaw) || 1);
+  const logFrp = Math.log10(frp);
+  const stops = FRP_COLOR_STOPS;
+  if (logFrp <= stops[0].log) return rgbHex(stops[0].rgb);
+  if (logFrp >= stops[stops.length - 1].log) return rgbHex(stops[stops.length - 1].rgb);
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (logFrp >= stops[i].log && logFrp <= stops[i + 1].log) {
+      const t = (logFrp - stops[i].log) / (stops[i + 1].log - stops[i].log);
+      const c = stops[i].rgb.map((v, idx) => Math.round(v + (stops[i + 1].rgb[idx] - v) * t));
+      return rgbHex(c);
+    }
+  }
+  return rgbHex(stops[stops.length - 1].rgb);
+}
+function rgbHex([r, g, b]) {
+  return "#" + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(",");
+    const row = {};
+    headers.forEach((h, i) => row[h] = vals[i]);
+    return row;
+  });
+}
+
+function showError(msg) {
+  const banner = document.getElementById("error-banner");
+  banner.textContent = msg;
+  banner.style.display = msg ? "block" : "none";
+}
+
+const BEAUFORT_SCALE = [
+  { max: 1, label: "Calme" }, { max: 5, label: "Air léger" }, { max: 11, label: "Légère brise" },
+  { max: 19, label: "Petite brise" }, { max: 28, label: "Jolie brise" }, { max: 38, label: "Bonne brise" },
+  { max: 49, label: "Vent frais" }, { max: 61, label: "Grand frais" }, { max: 74, label: "Coup de vent" },
+  { max: 88, label: "Fort coup de vent" }, { max: 102, label: "Tempête" }, { max: 117, label: "Violente tempête" },
+  { max: Infinity, label: "Ouragan" }
+];
+function beaufort(kmh) {
+  const idx = BEAUFORT_SCALE.findIndex(b => kmh <= b.max);
+  return { force: idx, label: BEAUFORT_SCALE[idx].label };
+}
+function cardinal(deg) {
+  const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function formatWind(speed, gusts, dir, sourceLabel) {
+  const b = beaufort(speed);
+  const gustTxt = gusts !== undefined && gusts !== null ? ` · raf. ${Math.round(gusts)} km/h` : "";
+  return `💨 ${Math.round(speed)} km/h${gustTxt} · ${cardinal(dir)} (${Math.round(dir)}°) · F${b.force} ${b.label}${sourceLabel ? " · " + sourceLabel : ""}`;
+}
+
+let lastKnownWind = null; // { speedKmh, dirDeg } — repli quand la grille est indisponible (ex: quota 429)
+
+// Préférence de source vent : "auto" (repli en cascade comme avant) ou une source forcée.
+// Une source forcée n'essaie PAS les autres en cas d'échec — c'est le but demandé : voir
+// clairement si CETTE source précise fonctionne, plutôt que masquer l'échec par un repli silencieux.
+let windSourcePreference = "auto";
+
+async function fetchWindArome() {
+  const windEl = document.getElementById("wind-display");
+  const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=44.84&longitude=-0.58&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kmh&models=meteofrance_arome_france_hd");
+  if (!res.ok) throw new Error(`Erreur Open-Meteo HTTP ${res.status}`);
+  const data = await res.json();
+  console.log("Réponse Open-Meteo (AROME) :", data);
+  const c = data.current;
+  if (!c || c.wind_speed_10m === undefined) {
+    throw new Error("Champ wind_speed_10m absent de la réponse AROME — voir console (F12) pour le JSON complet.");
+  }
+  windEl.textContent = formatWind(c.wind_speed_10m, c.wind_gusts_10m, c.wind_direction_10m, "AROME");
+  lastKnownWind = { speedKmh: c.wind_speed_10m, dirDeg: c.wind_direction_10m };
+}
+
+async function fetchWindOpenMeteoGeneric() {
+  const windEl = document.getElementById("wind-display");
+  const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=44.84&longitude=-0.58&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  console.log("Réponse Open-Meteo (modèle générique) :", data);
+  const c = data.current;
+  if (!c || c.wind_speed_10m === undefined) throw new Error("Champ wind_speed_10m absent.");
+  windEl.textContent = formatWind(c.wind_speed_10m, undefined, c.wind_direction_10m, "Open-Meteo générique");
+  lastKnownWind = { speedKmh: c.wind_speed_10m, dirDeg: c.wind_direction_10m };
+}
+
+async function fetchWindMetNo() {
+  const windEl = document.getElementById("wind-display");
+  const res = await fetch(WIND_PROXY_URL);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  console.log("Réponse met.no (via VPS) :", data);
+  if (typeof data.speed_ms !== "number") throw new Error("Champ speed_ms absent.");
+  const speedKmh = data.speed_ms * 3.6;
+  windEl.textContent = formatWind(speedKmh, undefined, data.direction_deg, "met.no via VPS");
+  lastKnownWind = { speedKmh, dirDeg: data.direction_deg };
+}
+
+async function fetchWind() {
+  const windEl = document.getElementById("wind-display");
+
+  // Source forcée par l'utilisateur : on essaie UNIQUEMENT celle-là, pas de repli automatique,
+  // pour que l'échec ou la réussite de cette source précise soit visible sans être masqué.
+  if (windSourcePreference !== "auto") {
+    const sourceFns = { arome: fetchWindArome, "open-meteo": fetchWindOpenMeteoGeneric, metno: fetchWindMetNo };
+    const sourceLabels = { arome: "AROME", "open-meteo": "Open-Meteo générique", metno: "met.no via VPS" };
+    try {
+      await sourceFns[windSourcePreference]();
+    } catch (e) {
+      console.error(`Échec source forcée (${sourceLabels[windSourcePreference]}) :`, e);
+      windEl.textContent = "💨 indispo.";
+      windEl.title = `Source forcée "${sourceLabels[windSourcePreference]}" en échec : ${e.message}`;
+    }
+    return;
+  }
+
+  // Mode auto (par défaut) : cascade AROME -> Open-Meteo générique -> met.no via VPS.
+  try {
+    await fetchWindArome();
+  } catch (e) {
+    console.error("Échec AROME :", e);
+    try {
+      await fetchWindOpenMeteoGeneric();
+    } catch (e2) {
+      console.error("Échec repli Open-Meteo aussi :", e2);
+      // Dernier repli : met.no via le proxy VPS (nécessite le script côté VPS, voir instructions).
+      // Un appel direct depuis le navigateur échouerait : met.no bloque les User-Agent génériques,
+      // et le navigateur ne permet pas à du JS de personnaliser cet en-tête.
+      try {
+        await fetchWindMetNo();
+      } catch (e3) {
+        console.error("Échec repli met.no aussi :", e3);
+        windEl.textContent = "💨 indispo.";
+        windEl.title = e.message + " | " + e2.message + " | " + e3.message;
+      }
+    }
+  }
+}
+
+// Repli météo indépendant d'Open-Meteo : proxy sur le VPS qui relaie api.met.no avec un
+// User-Agent identifié (obligatoire côté met.no, impossible à fixer depuis le navigateur).
+// Nécessite d'ajouter l'endpoint /wind au script VPS existant (voir instructions fournies).
+const WIND_PROXY_URL = `${API_BASE}/wind?key=${API_SHARED_KEY}`;
+
+let planeMarkers = [];
+let planesEnabled = false;
+let planesLowAltOnly = false;
+let planesShowSecu = true;
+let planesShowGendarme = true;
+let planesShowMilitaire = true;
+function planePassesCategoryFilter(secu) {
+  if (!secu) return false;
+  if (secu.category === "secu") return planesShowSecu;
+  if (secu.category === "gendarme_police") return planesShowGendarme;
+  if (secu.category === "militaire") return planesShowMilitaire;
+  return false;
+}
+let planesTimer = null;
+let planesHistoryTimer = null;
+let hiddenPlaneHexes = new Set();
+let latestPlanesByHex = new Map();
+
+// Indicatifs radio confirmés d'aéronefs d'État français (vérifiés : Wikipédia, avionslegendaires.net,
+// documents IVAO SO France "Indicatifs d'appel des aéronefs d'état").
+const SECU_CIVILE_CALLSIGNS = [
+  { prefix: "PELICAN", label: "Canadair CL-415 (écopage)", icon: "🛩️", category: "secu" },
+  { prefix: "MILAN", label: "Dash 8 Q400MR (retardant)", icon: "✈️", category: "secu" },
+  { prefix: "DRAG", label: "Hélicoptère EC145/H145 (Sécurité civile)", icon: "🚁", category: "secu" }, // couvre "DRAGO25", "DRAG75S", etc.
+  { prefix: "ABEL", label: "Air Tractor AT-802F (loué, été)", icon: "🌾", category: "secu" },
+  { prefix: "TRACT", label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾", category: "secu" }, // ex: "TRACTORB", "TRACTA"
+  { prefix: "TRACK", label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾", category: "secu" }, // ex: "TRACKE" — variante orthographique observée
+  { prefix: "TGT", label: "Air Tractor AT-802 (bombardier léger)", icon: "🌾", category: "secu" }, // ex: "TGT42", "TGT43" — observés directement sur Flightradar24/GISFire
+  { prefix: "PUMA", label: "Hélicoptère H225 Super Puma (loué)", icon: "🚁", category: "secu" }, // ex: "PUMAB" — observé directement sur Flightradar24
+  { prefix: "HRZ", label: "Canadair CL-415 croate (renfort rescEU)", icon: "🛩️", category: "secu" } // Hrvatsko Ratno Zrakoplovstvo, déployé en renfort été 2026
+];
+const OTHER_STATE_CALLSIGNS = [
+  { prefix: "CHOUCAS", label: "Hélicoptère Gendarmerie (FAGN)", icon: "🚔", category: "gendarme_police" },
+  { prefix: "AIRPOL", label: "Police Nationale (PAF)", icon: "🚓", category: "gendarme_police" }
+];
+
+// Suivi personnalisé demandé : immatriculations étrangères non couvertes par F-ZB
+// (Air Tractor AT-802F Fire Boss loués, immatriculations suédoises/australiennes).
+const WATCHLIST_REGISTRATIONS = [
+  { reg: "SE-MHN", label: "Air Tractor AT-802F Fire Boss (suivi personnalisé)", icon: "🌾", category: "secu" },
+  { reg: "SE-MHO", label: "Air Tractor AT-802F Fire Boss (suivi personnalisé)", icon: "🌾", category: "secu" },
+  { reg: "VH-OUM", label: "Air Tractor AT-802F Fire Boss (suivi personnalisé)", icon: "🌾", category: "secu" }
+];
+
+function identifySecuCivile(flightRaw, reg, dbFlags) {
+  const flight = (flightRaw || "").trim().toUpperCase();
+  const regUp = (reg || "").trim().toUpperCase();
+  const secuMatch = SECU_CIVILE_CALLSIGNS.find(c => flight.startsWith(c.prefix));
+  if (secuMatch) return secuMatch;
+  const stateMatch = OTHER_STATE_CALLSIGNS.find(c => flight.startsWith(c.prefix));
+  if (stateMatch) return stateMatch;
+  const watchMatch = WATCHLIST_REGISTRATIONS.find(w => regUp === w.reg);
+  if (watchMatch) return watchMatch;
+  // Air Tractor AT-802F Fire Boss loués, immatriculés à l'étranger (Australie VH-, Suède SE-) —
+  // utilisés indifféremment comme indicatif (ex: "VH8FR") ou comme immatriculation.
+  if (flight.startsWith("VH") || regUp.startsWith("VH-") || regUp.startsWith("SE-")) {
+    return { prefix: "", label: "Air Tractor AT-802F Fire Boss (immatriculation étrangère louée)", icon: "🌾", category: "secu" };
+  }
+  // dbFlags & 1 = militaire, champ fourni directement par airplanes.live (documentation ADSBExchange v2).
+  if (typeof dbFlags === "number" && (dbFlags & 1)) {
+    return { prefix: "", label: "Aéronef militaire", icon: "⚔️", category: "militaire" };
+  }
+  if (regUp.startsWith("F-ZB")) {
+    return { prefix: "", label: "Aéronef d'État (immat. F-ZB)", icon: "🛩️", category: "secu" };
+  }
+  // Indicatif ET immatriculation vides : identité masquée, typique des vols militaires/gouvernementaux
+  // qui ne diffusent pas ces champs (ex: catégorie "Military or government" observée sur Flightradar24).
+  if (!flight && !regUp) {
+    return { prefix: "", label: "Identité masquée (probablement militaire/gouvernemental)", icon: "🕶️", category: "militaire" };
+  }
+  return null;
+}
+
+// Codes-types ICAO d'hélicoptères courants (repli si le champ standard "category" ADS-B est absent).
+const HELICOPTER_TYPE_CODES = new Set([
+  "EC20", "EC25", "EC30", "EC35", "EC45", "EC55", "EC65", "H160", "H175", "H225",
+  "AS32", "AS50", "AS55", "AS65", "B06", "B407", "B412", "B429", "R22", "R44", "R66",
+  "S76", "S92", "UH60", "UH1", "MI8", "AW139", "AW169", "AW109", "GAZL"
+]);
+
+function isHelicopter(category, typeCode) {
+  if (category === "A7") return true; // catégorie ADS-B standard "Rotorcraft" — la plus fiable
+  if (typeCode && HELICOPTER_TYPE_CODES.has(typeCode.toUpperCase())) return true;
+  return false;
+}
+
+function planeIconHtml(track, secu, heli) {
+  const symbol = secu ? secu.icon : (heli ? "🚁" : "✈️");
+  const borderColor = secu ? "#fb923c" : "#e2e8f0";
+  return `
+    <div style="position:relative;width:26px;height:26px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:rgba(10,14,20,0.9);border:2px solid ${borderColor};box-shadow:0 1px 5px rgba(0,0,0,0.7);"></div>
+      <div class="plane-rot" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;transform:rotate(${track || 0}deg);">${symbol}</div>
+    </div>`;
+}
+
+function renderPlanesList() {
+  const container = document.getElementById("planes-list");
+  const entries = Array.from(latestPlanesByHex.values());
+  if (entries.length === 0) {
+    container.innerHTML = `<p class="muted">Aucun appareil détecté dans la zone actuelle.</p>`;
+    return;
+  }
+  entries.sort((a, b) => {
+    if (!!a.secu !== !!b.secu) return a.secu ? -1 : 1;
+    return (a.flight || a.r || a.hex).localeCompare(b.flight || b.r || b.hex);
+  });
+  container.innerHTML = entries.map(a => {
+    const checked = !hiddenPlaneHexes.has(a.hex);
+    const label = a.flight ? a.flight.trim() : (a.r || a.hex);
+    const altTxt2 = a.alt_baro === "ground" ? "au sol" : ((a.alt_baro ?? "—") + " ft");
+    const detail = a.secu ? `${a.secu.label}` : `${a.t || "type inconnu"} · ${altTxt2}`;
+    return `<label class="plane-row ${a.secu ? "secu" : ""}">
+      <input type="checkbox" data-hex="${a.hex}" class="plane-visibility-cb pr-checkbox" ${checked ? "checked" : ""} />
+      <span class="pr-icon-box">${a.secu ? a.secu.icon : "✈️"}</span>
+      <span class="pr-info">
+        <div class="pr-call"><span class="pr-dot"></span>${label}</div>
+        <div class="pr-detail">${detail}</div>
+      </span>
+    </label>`;
+  }).join("");
+
+  container.querySelectorAll(".plane-visibility-cb").forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      const hex = e.target.dataset.hex;
+      if (e.target.checked) hiddenPlaneHexes.delete(hex);
+      else hiddenPlaneHexes.add(hex);
+      renderPlanesForTimeline();
+    });
+  });
+}
+
+let planeHistory = new Map(); // hex -> [{ts, lat, lon, ...}] — session + historique persistant
+
+// Source directe (VPS, sans cache, fraîcheur réelle) — priorité.
+// Change cette adresse si tu changes de VPS.
+const PLANES_LIVE_URL = `${API_BASE}/recent?key=${API_SHARED_KEY}`;
+// Repli : archive GitHub (persistante 49h, mais avec un cache d'environ 5 min imposé par leur CDN).
+const PLANES_HISTORY_URL = "https://raw.githubusercontent.com/yann4023/fire-map-data/main/data/planes_history.json";
+
+// Dedup en O(1) : un ensemble d'horodatages deja stockes par avion. Une simple comparaison au
+// dernier ts ne suffit pas, car le backfill insere des points PLUS ANCIENS que ceux deja recus
+// en direct — ils seraient alors tous rejetes a tort. Seuls les appareils d'interet etant
+// conserves, cet ensemble reste petit.
+let mergedTsByHex = new Map(); // hex -> Set de ts deja stockes
+
+function mergeSnapshotIntoHistory(ts, aircraftList) {
+  const cutoff = Date.now() - 49 * 3600 * 1000;
+  if (ts < cutoff) return;
+  const touchedHexes = new Set();
+
+  aircraftList.forEach(a => {
+    if (typeof a.lat !== "number" || typeof a.lon !== "number") return;
+    // Ne garde en historique que les avions d'intérêt (Sécurité Civile, Gendarmerie, militaire) —
+    // le reste du trafic (vols de ligne en croisière) n'a aucun usage ici (trails, largages) et
+    // gonflait planeHistory pour rien : jusqu'à ~150 avions stockés alors que seuls quelques-uns
+    // comptent. C'est la cause principale du ralentissement.
+    const secu = identifySecuCivile(a.flight, a.r, a.dbFlags);
+    if (!secu) return;
+
+    if (!mergedTsByHex.has(a.hex)) mergedTsByHex.set(a.hex, new Set());
+    const seen = mergedTsByHex.get(a.hex);
+    if (seen.has(ts)) return; // deja stocke (rafraichissements successifs, ou backfill redondant)
+
+    if (!planeHistory.has(a.hex)) planeHistory.set(a.hex, []);
+    planeHistory.get(a.hex).push({
+      ts, lat: a.lat, lon: a.lon, track: a.track,
+      flight: a.flight, r: a.r, t: a.t, alt_baro: a.alt_baro, gs: a.gs, hex: a.hex, secu
+    });
+    seen.add(ts);
+    touchedHexes.add(a.hex);
+  });
+
+  // Tri/nettoyage uniquement des avions réellement modifiés dans cet appel, pas tout planeHistory —
+  // avant, chaque avion (même sans nouvelle donnée) était retrié et réexaminé à chaque poll de 3s.
+  touchedHexes.forEach(hex => {
+    const hist = planeHistory.get(hex);
+    hist.sort((a, b) => a.ts - b.ts); // le backfill peut inserer des points anterieurs
+    const seen = mergedTsByHex.get(hex);
+    while (hist.length && hist[0].ts < cutoff) {
+      const dropped = hist.shift();
+      if (seen) seen.delete(dropped.ts); // purge l'ensemble en meme temps, sinon il grossit sans fin
+    }
+  });
+}
+
+function applyLiveSnapshots(snapshots, sourceLabel) {
+  snapshots.forEach(snap => mergeSnapshotIntoHistory(snap.ts * 1000, snap.ac || []));
+  if (snapshots.length > 0) {
+    const latest = snapshots.reduce((a, b) => (a.ts > b.ts ? a : b));
+    const list = (latest.ac || [])
+      .filter(a => typeof a.lat === "number" && typeof a.lon === "number")
+      .filter(a => !planesLowAltOnly || (typeof a.alt_baro === "number" && a.alt_baro < 5000))
+      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags) }))
+      .filter(a => planePassesCategoryFilter(a.secu));
+    latestPlanesByHex = new Map(list.map(a => [a.hex, a]));
+    renderPlanesList();
+  }
+  renderPlanesForTimeline();
+  runDropDetection();
+  console.log(`Avions : ${snapshots.length} instantané(s) via ${sourceLabel}.`);
+}
+
+async function fetchPersistedPlaneHistory() {
+  // Priorité au VPS (données fraîches, sans cache).
+  try {
+    const res = await fetch(PLANES_LIVE_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const snapshots = await res.json();
+    applyLiveSnapshots(snapshots, "VPS direct");
+    return;
+  } catch (e) {
+    console.warn("VPS direct indisponible, repli sur l'archive GitHub :", e.message);
+  }
+
+  // Repli : archive GitHub (fraîcheur ~5 min à cause de leur cache CDN, mais toujours disponible).
+  try {
+    const res = await fetch(PLANES_HISTORY_URL + `?_=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const snapshots = await res.json();
+    applyLiveSnapshots(snapshots, "archive GitHub (repli)");
+    return;
+  } catch (e) {
+    console.warn("Archive GitHub aussi indisponible, repli sur OpenSky Network :", e.message);
+  }
+
+  // Dernier repli : OpenSky Network, source publique indépendante d'airplanes.live — utile si
+  // le VPS ET l'archive GitHub sont indisponibles en même temps. Accès anonyme (sans clé), donc
+  // pas de champ dbFlags/category ADS-B standard comme airplanes.live : l'identification par
+  // indicatif radio (PELICAN, MILAN, etc.) reste possible, mais la détection militaire par dbFlags
+  // et la détection hélicoptère par category A7 seront moins fiables sur cette source.
+  try {
+    const snapshot = await fetchOpenSkyFallback();
+    if (snapshot) applyLiveSnapshots([snapshot], "OpenSky Network (repli)");
+  } catch (e) {
+    console.error("Échec chargement historique (VPS, GitHub et OpenSky) :", e);
+    showError("Suivi aérien indisponible (VPS, repli GitHub et repli OpenSky en échec) : " + e.message);
+  }
+}
+
+// OpenSky Network : API REST publique, accès anonyme possible sans clé (débit réduit, mais
+// suffisant pour un repli occasionnel). states/all avec une bbox autour de la zone couverte.
+// Doc : https://openskynetwork.github.io/opensky-api/rest.html
+const OPENSKY_BBOX = { lamin: 41, lamax: 51.5, lomin: -5.5, lomax: 10 }; // même emprise que FRANCE_BBOX
+
+async function fetchOpenSkyFallback() {
+  const url = `https://opensky-network.org/api/states/all?lamin=${OPENSKY_BBOX.lamin}&lomin=${OPENSKY_BBOX.lomin}&lamax=${OPENSKY_BBOX.lamax}&lomax=${OPENSKY_BBOX.lomax}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OpenSky : HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.states) return null;
+  // Un "state vector" OpenSky est un tableau positionnel (pas un objet) — indices documentés :
+  // 0 icao24, 1 callsign, 5 lon, 6 lat, 7 baro_altitude(m), 9 velocity(m/s), 10 true_track, 8 on_ground
+  const ac = data.states.map(s => ({
+    hex: s[0],
+    flight: (s[1] || "").trim(),
+    r: null, // OpenSky anonyme ne fournit pas l'immatriculation directement
+    t: null,
+    lat: s[6], lon: s[5],
+    alt_baro: s[8] ? "ground" : (typeof s[7] === "number" ? Math.round(s[7] * 3.28084) : null), // m -> ft
+    gs: typeof s[9] === "number" ? Math.round(s[9] * 1.94384) : null, // m/s -> kt
+    track: s[10],
+    dbFlags: null, // non fourni en accès anonyme : la détection "militaire" par dbFlags ne s'appliquera pas ici
+    category: null
+  })).filter(a => typeof a.lat === "number" && typeof a.lon === "number");
+  return { ts: Math.floor(Date.now() / 1000), ac };
+}
+let planeTrails = [];
+
+const LIVE_TRAIL_WINDOW_MS = 1 * 3600 * 1000; // 1h de manœuvres visibles en mode direct, comme demandé
+
+// Couleur distincte et stable par avion, dérivée de son identifiant hex unique (même avion = même couleur d'une session à l'autre).
+function colorForPlane(hex) {
+  let h = 0;
+  for (let i = 0; i < hex.length; i++) h = (h * 31 + hex.charCodeAt(i)) % 360;
+  return `hsl(${h}, 85%, 60%)`;
+}
+
+function drawFlightTrail(hist, upToTs, windowMs, color, currentPos) {
+  const points = hist.filter(p => p.ts <= upToTs && p.ts > upToTs - windowMs);
+  const latlngs = points.map(p => [p.lat, p.lon]);
+  // Ajoute la position actuelle exacte comme dernier point, pour ne jamais avoir d'écart visuel
+  // entre la fin de la traînée et l'icône de l'avion (même si l'historique local est un peu en retard).
+  if (currentPos) {
+    const last = latlngs[latlngs.length - 1];
+    if (!last || last[0] !== currentPos[0] || last[1] !== currentPos[1]) latlngs.push(currentPos);
+  }
+  if (latlngs.length < 2) return null;
+  return L.polyline(latlngs, {
+    color, weight: 2, opacity: 0.85, dashArray: "1,6", lineCap: "round", pane: "trailPane"
+  }).addTo(map);
+}
+
+let planeMarkersByHex = new Map(); // hex -> L.marker (persistants en mode direct, jamais détruits/recréés)
+let planeAnim = new Map(); // hex -> { fromLat, fromLon, toLat, toLon, fromTrack, toTrack, startTs, durationMs }
+let planeAnimRAF = null;
+
+function lerpAngle(a, b, t) {
+  let diff = ((b - a + 540) % 360) - 180; // chemin le plus court (évite de tourner à 350° pour aller de 10° à 350°)
+  return a + diff * t;
+}
+
+function startPlaneAnimLoop() {
+  if (planeAnimRAF) return; // déjà en cours
+  function frame() {
+    const now = Date.now();
+    planeAnim.forEach((anim, hex) => {
+      const marker = planeMarkersByHex.get(hex);
+      if (!marker) { planeAnim.delete(hex); return; }
+      const t = Math.min(1, (now - anim.startTs) / anim.durationMs);
+      const lat = anim.fromLat + (anim.toLat - anim.fromLat) * t;
+      const lon = anim.fromLon + (anim.toLon - anim.fromLon) * t;
+      const track = lerpAngle(anim.fromTrack, anim.toTrack, t);
+      marker.setLatLng([lat, lon]);
+      const iconEl = marker.getElement();
+      if (iconEl) {
+        const rotEl = iconEl.querySelector(".plane-rot");
+        if (rotEl) rotEl.style.transform = `rotate(${track}deg)`;
+      }
+      if (t >= 1) planeAnim.delete(hex);
+    });
+    planeAnimRAF = requestAnimationFrame(frame);
+  }
+  planeAnimRAF = requestAnimationFrame(frame);
+}
+
+// Crée le marqueur au premier passage, ou programme une interpolation douce vers la nouvelle
+// position s'il existe déjà (au lieu de "sauter" directement, façon Flightradar24/GISFire).
+function updateLivePlaneMarker(a, animDurationMs) {
+  const existing = planeMarkersByHex.get(a.hex);
+  const altTxt = a.alt_baro === "ground" ? "au sol" : (typeof a.alt_baro === "number" ? `${a.alt_baro} ft` : "—");
+  const popupHtml = `<b>${a.secu ? a.secu.icon : "✈️"} ${a.flight ? a.flight.trim() : (a.r || a.hex)}</b><br/>` +
+    (a.secu ? `<b>${a.secu.label}</b><br/>` : "") +
+    `Type : ${a.t || "inconnu"}<br/>` +
+    `Altitude : ${altTxt}<br/>` +
+    `Vitesse sol : ${a.gs ?? "—"} kt<br/>` +
+    `<span class="muted">immat. ${a.r || "—"} · hex ${a.hex}</span>`;
+
+  if (!existing) {
+    const icon = L.divIcon({ html: planeIconHtml(a.track, a.secu, isHelicopter(a.category, a.t)), className: "", iconSize: [26, 26], iconAnchor: [13, 13] });
+    const marker = L.marker([a.lat, a.lon], { icon }).bindPopup(popupHtml).addTo(map);
+    planeMarkersByHex.set(a.hex, marker);
+    return;
+  }
+  existing.setPopupContent(popupHtml);
+  const currentLatLng = existing.getLatLng();
+  planeAnim.set(a.hex, {
+    fromLat: currentLatLng.lat, fromLon: currentLatLng.lng,
+    toLat: a.lat, toLon: a.lon,
+    fromTrack: (planeAnim.get(a.hex) || {}).toTrack ?? (a.track || 0),
+    toTrack: a.track || 0,
+    startTs: Date.now(), durationMs: animDurationMs || 15000
+  });
+  startPlaneAnimLoop();
+}
+
+function clearLivePlaneMarkers() {
+  planeMarkersByHex.forEach(m => map.removeLayer(m));
+  planeMarkersByHex.clear();
+  planeAnim.clear();
+  if (planeAnimRAF) { cancelAnimationFrame(planeAnimRAF); planeAnimRAF = null; }
+}
+
+function renderPlanesForTimeline() {
+  planeTrails.forEach(t => map.removeLayer(t));
+  planeTrails = [];
+
+  if (!planesEnabled) { clearLivePlaneMarkers(); planeMarkers.forEach(m => map.removeLayer(m)); planeMarkers = []; return; }
+
+  const slider = document.getElementById("timeline-slider");
+  const cursorTs = Number(slider.value);
+  const isNow = Math.abs(cursorTs - Date.now()) < 5 * 60 * 1000;
+
+  if (isNow) {
+    // Mode direct : marqueurs persistants, animés en douceur vers chaque nouvelle position reçue
+    // (au lieu de recréer/sauter), plus une traînée pointillée par avion.
+    planeMarkers.forEach(m => map.removeLayer(m)); // au cas où on vient de quitter le mode historique
+    planeMarkers = [];
+    const seenHex = new Set();
+    latestPlanesByHex.forEach(a => {
+      if (hiddenPlaneHexes.has(a.hex)) return;
+      seenHex.add(a.hex);
+      const hist = planeHistory.get(a.hex);
+      if (hist) {
+        const trail = drawFlightTrail(hist, cursorTs, LIVE_TRAIL_WINDOW_MS, colorForPlane(a.hex), [a.lat, a.lon]);
+        if (trail) planeTrails.push(trail);
+      }
+      updateLivePlaneMarker(a, 3000);
+    });
+    // Retire les marqueurs des avions qui ne sont plus dans la zone/liste.
+    planeMarkersByHex.forEach((marker, hex) => {
+      if (!seenHex.has(hex)) {
+        map.removeLayer(marker);
+        planeMarkersByHex.delete(hex);
+        planeAnim.delete(hex);
+      }
+    });
+    return;
+  }
+
+  // Mode historique : on quitte le direct, donc on nettoie les marqueurs animés persistants.
+  clearLivePlaneMarkers();
+  planeMarkers.forEach(m => map.removeLayer(m));
+  planeMarkers = [];
+
+  // Dernière position connue à cet instant (dans notre fenêtre de session),
+  // plus une traînée retraçant le déplacement jusqu'au curseur, couleur distincte par avion.
+  const trailWindowMs = timelineWindowHours * 3600 * 1000;
+  planeHistory.forEach((hist, hex) => {
+    if (hiddenPlaneHexes.has(hex)) return;
+    const upToCursor = hist.filter(p => p.ts <= cursorTs);
+    if (upToCursor.length === 0) return; // rien d'enregistré avant ce point dans notre session
+    const trailPoints = upToCursor.filter(p => p.ts > cursorTs - trailWindowMs);
+    const last = upToCursor[upToCursor.length - 1];
+    // Ignore si la derniere position connue est trop vieille par rapport au curseur : l'avion
+    // etait probablement deja reparti ou hors zone a cet instant-la. Seuil volontairement court
+    // pour ne pas laisser un appareil "fantome" fige sur la carte pendant des heures.
+    if (cursorTs - last.ts > 15 * 60 * 1000) return;
+
+    if (trailPoints.length > 1) {
+      const latlngs = trailPoints.map(p => [p.lat, p.lon]);
+      const trail = L.polyline(latlngs, {
+        color: colorForPlane(hex), weight: 2, opacity: 0.75, dashArray: "4,4", pane: "trailPane"
+      }).addTo(map);
+      planeTrails.push(trail);
+    }
+    addPlaneMarker(last.lat, last.lon, last.track, last, true);
+  });
+}
+
+function addPlaneMarker(lat, lon, track, a, historical) {
+  const icon = L.divIcon({ html: planeIconHtml(track, a.secu, isHelicopter(a.category, a.t)), className: historical ? "plane-historical" : "", iconSize: [26, 26], iconAnchor: [13, 13] });
+  const altTxt = a.alt_baro === "ground" ? "au sol" : (typeof a.alt_baro === "number" ? `${a.alt_baro} ft` : "—");
+  const marker = L.marker([lat, lon], { icon, opacity: historical ? 0.75 : 1 }).bindPopup(
+    `<b>${a.secu ? a.secu.icon : "✈️"} ${a.flight ? a.flight.trim() : (a.r || a.hex)}</b>${historical ? " <span class='muted'>(position historique)</span>" : ""}<br/>` +
+    (a.secu ? `<b>${a.secu.label}</b><br/>` : "") +
+    `Type : ${a.t || "inconnu"}<br/>` +
+    `Altitude : ${altTxt}<br/>` +
+    `Vitesse sol : ${a.gs ?? "—"} kt<br/>` +
+    `<span class="muted">immat. ${a.r || "—"} · hex ${a.hex}</span>`
+  );
+  marker.addTo(map);
+  planeMarkers.push(marker);
+}
+
+async function fetchPlanes() {
+  if (!planesEnabled || !map) return;
+  try {
+    const center = map.getCenter();
+    // Rayon 150 nm (~278 km) autour du centre visible de la carte.
+    const url = `https://api.airplanes.live/v2/point/${center.lat.toFixed(3)}/${center.lng.toFixed(3)}/150`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`airplanes.live : HTTP ${res.status}`);
+    const data = await res.json();
+    const list = (data.ac || [])
+      .filter(a => typeof a.lat === "number" && typeof a.lon === "number")
+      .filter(a => !planesLowAltOnly || (typeof a.alt_baro === "number" && a.alt_baro < 5000))
+      .map(a => ({ ...a, secu: identifySecuCivile(a.flight, a.r, a.dbFlags) }))
+      .filter(a => planePassesCategoryFilter(a.secu));
+
+    latestPlanesByHex = new Map(list.map(a => [a.hex, a]));
+    renderPlanesList();
+
+    // Alimente l'historique de trajectoire (session en direct + fusion avec l'historique persistant GitHub).
+    mergeSnapshotIntoHistory(Date.now(), list);
+
+    renderPlanesForTimeline();
+    runDropDetection();
+  } catch (e) {
+    console.error("Échec airplanes.live :", e);
+    showError("Suivi aérien indisponible : " + (e.message.includes("Failed to fetch") ? "probable blocage CORS." : e.message));
+  }
+}
+
+// --- Détection de largages : aucun appareil n'annonce ses largages, on les déduit du profil de
+// vol (descente / palier bas / remontée), exactement comme la méthode publiée par GISFire.
+// C'est une heuristique, pas une confirmation officielle — le popup le rappelle systématiquement.
+// Rendu en ZONE (polygone suivant le passage bas), pas en points : le passage entier est traité
+// comme un seul événement plutôt que redétecté à chaque point de l'historique.
+let dropsEnabled = false;
+let dropZones = [];
+let dropEventLog = []; // historique complet de session, pour la liste latérale — ne s'efface pas tout seul
+const DROP_ALT_THRESHOLD_FT = 400;      // chute mini d'altitude pour suspecter une approche de largage
+const DROP_LOW_ALT_FT = 3000;           // plafond d'altitude plausible pour un largage (proche du sol/canopée)
+const DROP_LOW_ALT_FLOOR_FT = 328;       // plancher ≈ 100 m : en dessous, on exclut (sol/bruit capteur), au-dessus c'est la vraie plage de largage
+const DROP_RECOVERY_FT = 300;           // remontée mini après le palier bas (distingue un passage d'un atterrissage)
+const DROP_WINDOW_MS = 4 * 60 * 1000;   // fenêtre d'analyse avant/après le palier bas
+const DROP_SEGMENT_GAP_MS = 90 * 1000;  // écart max entre deux points bas pour rester dans le même passage
+const DROP_COOLDOWN_MS = 3 * 60 * 1000; // évite de redétecter le même passage
+const DROP_ZONE_HALF_WIDTH_M = 180;     // demi-largeur de la zone tracée le long du passage
+const DROP_ZONE_POINT_COUNT = 4;        // ne garde que les 4 points d'altitude les plus basses du passage
+const DROP_SCAN_LOOKBACK_MS = 20 * 60 * 1000; // fenêtre de rescan (large marge autour des fenêtres pré/post de 4 min)
+
+// Produit déduit du type d'appareil, comme GISFire : Air Tractor = eau, Dash 8 = retardant.
+function bomberProductType(secu) {
+  if (!secu) return null;
+  if (["PELICAN", "ABEL", "TRACT", "TRACK", "TGT", "HRZ"].includes(secu.prefix)) return "eau";
+  if (secu.prefix === "MILAN") return "retardant";
+  if (secu.label && secu.label.includes("Fire Boss")) return "eau"; // immatriculations étrangères en watchlist
+  return null; // hélicoptères (DRAG/PUMA) et autres catégories : pas de profil de largage fiable ici
+}
+
+function altToNumber(alt_baro) {
+  if (alt_baro === "ground") return 0;
+  if (typeof alt_baro === "number") return alt_baro;
+  return null;
+}
+
+// Construit un polygone "corridor" autour d'une trajectoire (liste de points), en décalant
+// chaque point perpendiculairement à sa direction locale. Approximation plane simple (suffisante
+// à l'échelle d'un passage bas de quelques centaines de mètres à quelques km).
+function bufferPathToPolygon(points, halfWidthM) {
+  if (points.length === 1) return circlePolygonPoints(points[0].lat, points[0].lon, halfWidthM);
+  const left = [], right = [];
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const latRad = points[i].lat * Math.PI / 180;
+    const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos(latRad);
+    const dx = (next.lon - prev.lon) * mPerDegLon;
+    const dy = (next.lat - prev.lat) * mPerDegLat;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len, ny = dx / len; // vecteur perpendiculaire unitaire
+    left.push([points[i].lat + (ny * halfWidthM) / mPerDegLat, points[i].lon + (nx * halfWidthM) / mPerDegLon]);
+    right.push([points[i].lat - (ny * halfWidthM) / mPerDegLat, points[i].lon - (nx * halfWidthM) / mPerDegLon]);
+  }
+  return left.concat(right.reverse());
+}
+
+function circlePolygonPoints(lat, lon, radiusM, n = 16) {
+  const pts = [];
+  const latRad = lat * Math.PI / 180;
+  const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos(latRad);
+  for (let i = 0; i < n; i++) {
+    const angle = 2 * Math.PI * i / n;
+    pts.push([lat + (radiusM * Math.sin(angle)) / mPerDegLat, lon + (radiusM * Math.cos(angle)) / mPerDegLon]);
+  }
+  return pts;
+}
+
+let lastDropCheckTsByHex = new Map();     // hex -> ts du dernier point déjà analysé
+let lastDropDetectedTsByHex = new Map();  // hex -> ts du dernier largage détecté (cooldown)
+
+// Analyse l'historique par SEGMENTS de palier bas (pas point par point) : tous les points bas
+// consécutifs et rapprochés (< DROP_SEGMENT_GAP_MS d'écart) forment un seul passage, donc un seul événement.
+function detectDropsForHex(hex, secu) {
+  const product = bomberProductType(secu);
+  if (!product) return;
+  const hist = planeHistory.get(hex);
+  if (!hist || hist.length < 3) return;
+
+  const sinceTs = lastDropCheckTsByHex.get(hex) || 0;
+  // Ne rescanne qu'une fenêtre récente (assez large pour couvrir les fenêtres pré/post-largage),
+  // pas tout l'historique depuis le début — sinon le coût grandit sans fin avec la durée de session.
+  const scanFromTs = Date.now() - DROP_SCAN_LOOKBACK_MS;
+  let i = 0;
+  while (i < hist.length && hist[i].ts < scanFromTs) i++;
+  while (i < hist.length) {
+    const alt = altToNumber(hist[i].alt_baro);
+    if (alt === null || alt > DROP_LOW_ALT_FT || alt < DROP_LOW_ALT_FLOOR_FT) { i++; continue; }
+
+    // Étend le segment tant que les points bas restent consécutifs et rapprochés dans le temps.
+    const segStart = i;
+    let segEnd = i;
+    while (segEnd + 1 < hist.length) {
+      const nextAlt = altToNumber(hist[segEnd + 1].alt_baro);
+      const gapMs = hist[segEnd + 1].ts - hist[segEnd].ts;
+      if (nextAlt !== null && nextAlt <= DROP_LOW_ALT_FT && nextAlt >= DROP_LOW_ALT_FLOOR_FT && gapMs <= DROP_SEGMENT_GAP_MS) segEnd++;
+      else break;
+    }
+
+    if (hist[segEnd].ts > sinceTs) {
+      let preAlt = -Infinity;
+      for (let j = segStart - 1; j >= 0 && hist[segStart].ts - hist[j].ts <= DROP_WINDOW_MS; j--) {
+        const a = altToNumber(hist[j].alt_baro); if (a !== null) preAlt = Math.max(preAlt, a);
+      }
+      let postAlt = -Infinity;
+      for (let j = segEnd + 1; j < hist.length && hist[j].ts - hist[segEnd].ts <= DROP_WINDOW_MS; j++) {
+        const a = altToNumber(hist[j].alt_baro); if (a !== null) postAlt = Math.max(postAlt, a);
+      }
+      const segAlts = hist.slice(segStart, segEnd + 1).map(p => altToNumber(p.alt_baro)).filter(a => a !== null);
+      const minAltInSeg = segAlts.length ? Math.min(...segAlts) : null;
+
+      const cooldownUntil = (lastDropDetectedTsByHex.get(hex) || 0) + DROP_COOLDOWN_MS;
+      if (minAltInSeg !== null && preAlt !== -Infinity && postAlt !== -Infinity && hist[segStart].ts >= cooldownUntil) {
+        const descended = preAlt - minAltInSeg;
+        const climbed = postAlt - minAltInSeg;
+        if (descended >= DROP_ALT_THRESHOLD_FT && climbed >= DROP_RECOVERY_FT) {
+          lastDropDetectedTsByHex.set(hex, hist[segEnd].ts);
+          // Ne garde que les DROP_ZONE_POINT_COUNT points d'altitude les plus basses du passage
+          // (le cœur du largage), pas tout le segment qui peut inclure l'approche/le dégagement
+          // et donner une zone trop étirée.
+          const segRows = hist.slice(segStart, segEnd + 1).filter(p => altToNumber(p.alt_baro) !== null);
+          const lowestRows = segRows
+            .slice()
+            .sort((a, b) => altToNumber(a.alt_baro) - altToNumber(b.alt_baro))
+            .slice(0, DROP_ZONE_POINT_COUNT)
+            .sort((a, b) => a.ts - b.ts); // remis dans l'ordre chronologique pour un tracé cohérent
+          const segPoints = lowestRows.map(p => ({ lat: p.lat, lon: p.lon }));
+          addDropZone(segPoints, product, secu, hist[segStart].ts, hist[segEnd].ts);
+        }
+      }
+    }
+    i = segEnd + 1;
+  }
+  lastDropCheckTsByHex.set(hex, hist[hist.length - 1].ts);
+}
+
+function addDropZone(segPoints, product, secu, startTs, endTs) {
+  // Eau (Air Tractor / Canadair) = zone bleue, retardant (Dash 8) = zone rose — comme demandé.
+  const color = product === "eau" ? "#3b82f6" : "#ec4899";
+  const label = product === "eau" ? "💧 Zone de largage d'eau (déduite)" : "🩷 Zone de largage de retardant (déduite)";
+  const startStr = new Date(startTs).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const endStr = new Date(endTs).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const polygon = L.polygon(bufferPathToPolygon(segPoints, DROP_ZONE_HALF_WIDTH_M), {
+    color, weight: 1, opacity: 0.8, fillColor: color, fillOpacity: 0.35, pane: "dropPane"
+  }).bindPopup(
+    `<b>${label}</b><br/>` +
+    `${secu.label}<br/>` +
+    `Passage bas entre ${startStr} et ${endStr} UTC<br/>` +
+    `<span class="muted">Zone déduite du profil de vol (descente/palier bas/remontée) — pas une confirmation officielle.</span>`
+  );
+  // Persistant pour toute la session (pas d'expiration auto) : c'est un historique, comme demandé.
+  if (dropsEnabled) polygon.addTo(map);
+  dropZones.push(polygon);
+  dropEventLog.push({ ts: endTs, startTs, product, label: secu.label, polygon });
+  dropEventLog.sort((a, b) => b.ts - a.ts); // plus récent en premier
+  renderDropHistoryList();
+}
+
+function renderDropHistoryList() {
+  const panel = document.getElementById("drop-history-panel");
+  const list = document.getElementById("drop-history-list");
+  if (dropEventLog.length === 0) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+  list.innerHTML = dropEventLog.map(ev => {
+    const dot = ev.product === "eau" ? "#3b82f6" : "#ec4899";
+    const timeStr = new Date(ev.ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer" class="drop-history-entry">
+      <span class="dot" style="background:${dot};flex-shrink:0"></span>
+      <span style="flex:1;color:#e2e8f0">${ev.label}</span>
+      <span class="muted">${timeStr}</span>
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".drop-history-entry").forEach((el, i) => {
+    el.addEventListener("click", () => {
+      const ev = dropEventLog[i];
+      map.panTo(ev.polygon.getBounds().getCenter());
+      ev.polygon.openPopup();
+    });
+  });
+}
+
+document.getElementById("drop-history-clear").addEventListener("click", () => {
+  dropZones.forEach(z => map.removeLayer(z));
+  dropZones = [];
+  dropEventLog = [];
+  renderDropHistoryList();
+});
+
+function runDropDetection() {
+  if (!dropsEnabled) return;
+  planeHistory.forEach((hist, hex) => {
+    const last = hist[hist.length - 1];
+    if (last && last.secu) detectDropsForHex(hex, last.secu);
+  });
+}
+
+document.getElementById("toggle-drops").addEventListener("change", (e) => {
+  dropsEnabled = e.target.checked;
+  if (dropsEnabled) {
+    runDropDetection();
+    dropZones.forEach(z => z.addTo(map));
+  } else {
+    dropZones.forEach(z => map.removeLayer(z));
+  }
+});
+
+document.getElementById("toggle-planes").addEventListener("change", (e) => {
+  planesEnabled = e.target.checked;
+  document.getElementById("planes-list-panel").style.display = planesEnabled ? "block" : "none";
+  clearInterval(planesTimer);
+  clearInterval(planesHistoryTimer);
+  if (planesEnabled) {
+    backfillPlaneHistory(currentBackfillHours()); // charge l'historique pour pouvoir remonter la frise
+    fetchPersistedPlaneHistory();
+    // Le VPS collecte à 1s et pousse vers GitHub toutes les 3s — on lit au même rythme.
+    planesHistoryTimer = setInterval(fetchPersistedPlaneHistory, 3000);
+  } else {
+    clearInterval(planesHistoryTimer);
+    clearLivePlaneMarkers();
+    planeMarkers.forEach(m => map.removeLayer(m));
+    planeMarkers = [];
+    planeTrails.forEach(t => map.removeLayer(t));
+    planeTrails = [];
+  }
+});
+
+// Backfill de l'historique avions depuis l'archive GitHub persistante : c'est ce qui permet de
+// remonter la frise chronologique et de rejouer les mouvements passés. Sans lui, seule la session
+// en cours serait consultable (le VPS ne garde qu'une minute en memoire).
+//
+// Deux precautions :
+//  - Sous-echantillonnage : l'archive contient un point par seconde. Pour tracer une trainee,
+//    un point toutes les 15 s suffit largement, et cela evite de figer le navigateur en
+//    fusionnant des dizaines de milliers d'instantanes.
+//  - Profondeur reglable : le telechargement de l'archive a un cout, l'utilisateur choisit
+//    donc jusqu'ou il veut pouvoir remonter.
+let planeHistoryBackfilledHours = 0; // profondeur deja chargee, pour ne pas retelecharger inutilement
+let backfillInProgress = false;
+const BACKFILL_MIN_INTERVAL_MS = 15 * 1000; // resolution conservee pour les donnees historiques
+
+async function backfillPlaneHistory(hours) {
+  if (backfillInProgress) return;
+  if (hours <= planeHistoryBackfilledHours) return; // deja couvert par un chargement precedent
+  backfillInProgress = true;
+  try {
+    // Priorite au VPS : il sert son archive locale, toujours a jour. L'archive GitHub ne l'est
+    // que si le push a reussi — d'ou un historique parfois fige, invisible cote client.
+    let snapshots = null, source = "";
+    try {
+      // Filtrage cote serveur : sans ces parametres, le VPS renverrait toute son archive
+      // (plus de 100 Mo observes) alors que seules les dernieres heures nous interessent.
+      const res = await fetch(`${API_BASE}/history?hours=${hours}` +
+        `&step=${BACKFILL_MIN_INTERVAL_MS / 1000}&key=${API_SHARED_KEY}&_=${Date.now()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      snapshots = await res.json();
+      source = "VPS";
+    } catch (e1) {
+      console.warn("Historique via VPS indisponible, repli sur l'archive GitHub :", e1.message);
+      const res2 = await fetch(PLANES_HISTORY_URL + `?_=${Date.now()}`);
+      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+      snapshots = await res2.json();
+      source = "archive GitHub";
+    }
+    const cutoffSec = (Date.now() - hours * 3600 * 1000) / 1000;
+    // Diagnostic utile : si l'archive est figee, autant le dire clairement plutot que
+    // d'afficher une carte vide sans explication.
+    const newestTs = snapshots.length ? Math.max(...snapshots.map(x => x.ts)) : 0;
+    const ageMin = newestTs ? Math.round((Date.now() / 1000 - newestTs) / 60) : null;
+
+    let kept = 0, lastKeptTs = 0;
+    snapshots.forEach(snap => {
+      if (snap.ts < cutoffSec) return;
+      if (snap.ts - lastKeptTs < BACKFILL_MIN_INTERVAL_MS / 1000) return; // sous-echantillonnage
+      lastKeptTs = snap.ts;
+      mergeSnapshotIntoHistory(snap.ts * 1000, snap.ac || []);
+      kept++;
+    });
+
+    planeHistoryBackfilledHours = hours;
+    console.log(`Historique avions (${source}) : ${kept} retenus sur ${snapshots.length} pour ${hours} h ` +
+      `— donnee la plus recente il y a ${ageMin} min.`);
+    if (kept === 0 && snapshots.length > 0) {
+      showError(`Historique avions vide : la source (${source}) n'a rien de plus recent que ${ageMin} min. ` +
+        `Verifie que le service tourne sur le VPS.`);
+    }
+    renderPlanesForTimeline(); // redessine tout de suite avec les donnees fraichement chargees
+  } catch (e) {
+    console.warn(`Backfill historique avions (${hours} h) impossible :`, e.message);
+    showError("Historique des avions indisponible : " + e.message);
+  } finally {
+    backfillInProgress = false;
+  }
+}
+
+function currentBackfillHours() {
+  const sel = document.getElementById("plane-history-depth");
+  return sel ? Number(sel.value) : 6;
+}
+
+document.getElementById("plane-history-depth").addEventListener("change", () => {
+  if (planesEnabled) backfillPlaneHistory(currentBackfillHours());
+});
+
+
+document.getElementById("toggle-planes-lowalt").addEventListener("change", (e) => {
+  planesLowAltOnly = e.target.checked;
+  if (planesEnabled) fetchPersistedPlaneHistory();
+});
+
+document.getElementById("toggle-cat-secu").addEventListener("change", (e) => {
+  planesShowSecu = e.target.checked;
+  if (planesEnabled) fetchPersistedPlaneHistory();
+});
+document.getElementById("toggle-cat-gendarme").addEventListener("change", (e) => {
+  planesShowGendarme = e.target.checked;
+  if (planesEnabled) fetchPersistedPlaneHistory();
+});
+document.getElementById("toggle-cat-militaire").addEventListener("change", (e) => {
+  planesShowMilitaire = e.target.checked;
+  if (planesEnabled) fetchPersistedPlaneHistory();
+});
+
+document.getElementById("planes-select-all").addEventListener("click", () => {
+  hiddenPlaneHexes.clear();
+  renderPlanesList();
+  renderPlanesForTimeline();
+});
+document.getElementById("planes-select-none").addEventListener("click", () => {
+  latestPlanesByHex.forEach(a => hiddenPlaneHexes.add(a.hex));
+  renderPlanesList();
+  renderPlanesForTimeline();
+});
+
+function aqiCategory(aqi) {
+  if (aqi <= 20) return { label: "Bon", color: "#22c55e" };
+  if (aqi <= 40) return { label: "Correct", color: "#84cc16" };
+  if (aqi <= 60) return { label: "Modéré", color: "#eab308" };
+  if (aqi <= 80) return { label: "Mauvais", color: "#f97316" };
+  if (aqi <= 100) return { label: "Très mauvais", color: "#dc2626" };
+  return { label: "Extrêmement mauvais", color: "#7c2d12" };
+}
+
+let aqiEnabled = false;
+let aqiTimer = null;
+
+async function fetchAQI() {
+  if (!aqiEnabled || !map) return;
+  const el = document.getElementById("aqi-value");
+  el.style.display = "block";
+  try {
+    const center = map.getCenter();
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${center.lat.toFixed(3)}&longitude=${center.lng.toFixed(3)}&current=european_aqi,pm2_5,pm10`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    console.log("Réponse Open-Meteo Air Quality :", data);
+    const c = data.current;
+    if (!c || c.european_aqi === undefined) throw new Error("Champ european_aqi absent — voir console.");
+    const cat = aqiCategory(c.european_aqi);
+    el.innerHTML = `<span style="color:${cat.color};font-weight:600">Indice ${c.european_aqi} · ${cat.label}</span><br/>PM2.5 : ${c.pm2_5 ?? "—"} µg/m³ · PM10 : ${c.pm10 ?? "—"} µg/m³<br/><span style="font-size:10px">au centre de la carte visible</span>`;
+  } catch (e) {
+    console.error("Échec Air Quality :", e);
+    el.textContent = "Indisponible : " + (e.message.includes("Failed to fetch") ? "probable blocage CORS." : e.message);
+  }
+}
+
+document.getElementById("toggle-aqi").addEventListener("change", (e) => {
+  aqiEnabled = e.target.checked;
+  clearInterval(aqiTimer);
+  if (aqiEnabled) {
+    fetchAQI();
+    aqiTimer = setInterval(fetchAQI, 10 * 60 * 1000);
+  } else {
+    document.getElementById("aqi-value").style.display = "none";
+  }
+});
+
+let fireMarkers = [];
+let firesVisible = true;
+let allFireRows = [];
+let timelineWindowHours = 12; // 12h par défaut en mode direct : les captations satellite des 12 dernières heures
+let timelinePlaying = false;
+let timelinePlayTimer = null;
+
+// En mode "en direct", la couleur suit l'ancienneté de la détection RELATIVE À LA FENÊTRE CHOISIE
+// (1h/6h/24h/48h) : orange vif = début de fenêtre (probablement actif), gris = fin de fenêtre
+// (probablement déjà traité), avec un dégradé lissé entre les deux. Heuristique visuelle,
+// pas une confirmation réelle d'extinction — la FRP reste affichée dans le popup.
+const ACTIVE_FIRE_RGB = [255, 122, 0];   // orange vif — actif
+const COOLED_DOWN_RGB = [100, 116, 139]; // gris ardoise neutre — probablement éteint
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Palette "progression du feu" a 5 paliers, inspiree de RecordPy : jaune vif pour le front
+// actif, puis orange, rouge, rouge sombre et brun pour les terrains refroidis. Chaque palier
+// correspond a une fraction de la fenetre affichee, avec interpolation entre paliers.
+// C'est une lecture visuelle de l'anciennete de la detection, PAS une mesure d'extinction.
+const PROGRESSION_STOPS = [
+  { at: 0.00, rgb: [253, 224, 71] },  // jaune vif   - front le plus recent
+  { at: 0.25, rgb: [249, 115, 22] },  // orange
+  { at: 0.50, rgb: [220, 38, 38] },   // rouge
+  { at: 0.75, rgb: [127, 29, 29] },   // rouge sombre
+  { at: 1.00, rgb: [120, 92, 72] }    // brun        - refroidi depuis longtemps
+];
+let progressionColorsEnabled = false; // decoche par defaut : degrade orange -> gris
+
+function progressionColor(ageFrac) {
+  const f = Math.max(0, Math.min(1, ageFrac));
+  for (let i = 0; i < PROGRESSION_STOPS.length - 1; i++) {
+    const a = PROGRESSION_STOPS[i], b = PROGRESSION_STOPS[i + 1];
+    if (f <= b.at) {
+      const t = (f - a.at) / (b.at - a.at);
+      return rgbHex(a.rgb.map((v, k) => Math.round(v + (b.rgb[k] - v) * t)));
+    }
+  }
+  return rgbHex(PROGRESSION_STOPS[PROGRESSION_STOPS.length - 1].rgb);
+}
+
+function fireColorWithRecency(ageMs, windowMs) {
+  const ageFrac = Math.max(0, Math.min(1, ageMs / windowMs));
+  if (progressionColorsEnabled) return progressionColor(ageFrac);
+  const eased = ageFrac * ageFrac * (3 - 2 * ageFrac); // smoothstep : dégradé lissé, ni trop brusque ni linéaire
+  const blended = ACTIVE_FIRE_RGB.map((v, i) => Math.round(v + (COOLED_DOWN_RGB[i] - v) * eased));
+  return rgbHex(blended);
+}
+
+function makeFireMarker(r, isLive, cursorTs, windowMs) {
+  const lat = parseFloat(r.latitude), lon = parseFloat(r.longitude);
+  const ageMs = (cursorTs ?? Date.now()) - r.__ts;
+  const effectiveWindowMs = windowMs || (12 * 3600 * 1000);
+  const color = isLive ? fireColorWithRecency(ageMs, effectiveWindowMs) : frpToColor(r.frp);
+  const hh = (r.acq_time || "0000").padStart(4, "0").slice(0, 2);
+  const mm = (r.acq_time || "0000").padStart(4, "0").slice(2, 4);
+  const [y, mo, d] = (r.acq_date || "").split("-");
+  const dateLisible = (y && mo && d) ? `${d}/${mo}/${y}` : r.acq_date;
+  const ago = timeAgo(r.acq_date, r.acq_time);
+  const cooledNote = (isLive && ageMs / effectiveWindowMs > 0.5)
+    ? `<br/><span class="muted">Détection ancienne — probablement déjà traitée</span>` : "";
+  return L.circleMarker([lat, lon], {
+    radius: 5, color: "#0a0e14", weight: 1,
+    fillColor: color, fillOpacity: 0.9, pane: "firePane"
+  }).bindPopup(
+    `<b>🔥 Intensité (FRP)</b> ${r.frp} MW<br/>` +
+    `<b>Détecté le</b> ${dateLisible} à ${hh}:${mm} UTC${ago ? " (" + ago + ")" : ""}<br/>` +
+    `<b>Confiance</b> ${r.confidence} · <b>Source</b> ${r.__source}` + cooledNote
+  );
+}
+
+function updateLiveButtonState() {
+  const slider = document.getElementById("timeline-slider");
+  const btn = document.getElementById("timeline-live-btn");
+  if (!slider || !btn) return;
+  const cursorTs = Number(slider.value);
+  const isNow = Math.abs(cursorTs - Date.now()) < 5 * 60 * 1000;
+  btn.classList.toggle("active", isNow);
+}
+
+function setupTimeline(rows) {
+  if (rows.length === 0) return;
+  const slider = document.getElementById("timeline-slider");
+  const minTs = Math.min(...rows.map(r => r.__ts));
+  const maxTs = Math.max(...rows.map(r => r.__ts), Date.now());
+  slider.min = minTs;
+  slider.max = maxTs;
+  if (Number(slider.value) < minTs || Number(slider.dataset.userSet) !== 1) {
+    slider.value = maxTs; // par défaut : position "maintenant" (données les plus récentes)
+  }
+  updateLiveButtonState();
+}
+
+// --- Regroupement des détections en "événements feu" (équivalent client-side du DBSCAN de GISFire) ---
+// Rayon 2500 m, minimum 3 détections — mêmes paramètres que leur méthodologie publiée.
+const CLUSTER_EPS_METERS = 2500;
+const CLUSTER_MIN_PTS = 3;
+let fireEventCircles = [];
+let fireEventsVisible = true;
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Cap (0-360°) du point A vers le point B.
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+// Écart angulaire le plus court entre deux directions (0-180°).
+function angleDiff(a, b) {
+  return Math.abs(((b - a + 540) % 360) - 180);
+}
+
+function dbscanCluster(points, epsMeters, minPts) {
+  const n = points.length;
+  const visited = new Array(n).fill(false);
+  const clusterOf = new Array(n).fill(-1);
+  let clusterId = 0;
+
+  function regionQuery(i) {
+    const neighbors = [];
+    for (let j = 0; j < n; j++) {
+      if (haversineMeters(points[i].lat, points[i].lon, points[j].lat, points[j].lon) <= epsMeters) neighbors.push(j);
+    }
+    return neighbors;
+  }
+
+  for (let i = 0; i < n; i++) {
+    if (visited[i]) continue;
+    visited[i] = true;
+    const neighbors = regionQuery(i);
+    if (neighbors.length < minPts) continue; // reste "bruit" (clusterOf = -1)
+    clusterOf[i] = clusterId;
+    const queue = [...neighbors];
+    while (queue.length) {
+      const j = queue.shift();
+      if (!visited[j]) {
+        visited[j] = true;
+        const jNeighbors = regionQuery(j);
+        if (jNeighbors.length >= minPts) queue.push(...jNeighbors);
+      }
+      if (clusterOf[j] === -1) clusterOf[j] = clusterId;
+    }
+    clusterId++;
+  }
+  return clusterOf;
+}
+
+let lastFireEventClusters = []; // alimenté ici, réutilisé par renderSmokePlumes()
+
+function renderFireEvents(rows) {
+  fireEventCircles.forEach(c => map.removeLayer(c));
+  fireEventCircles = [];
+  lastFireEventClusters = [];
+  if (rows.length === 0) return;
+
+  const points = rows.map(r => ({ lat: parseFloat(r.latitude), lon: parseFloat(r.longitude), r }));
+  const clusterOf = dbscanCluster(points, CLUSTER_EPS_METERS, CLUSTER_MIN_PTS);
+
+  const clusters = new Map();
+  clusterOf.forEach((cid, i) => {
+    if (cid === -1) return;
+    if (!clusters.has(cid)) clusters.set(cid, []);
+    clusters.get(cid).push(points[i]);
+  });
+
+  clusters.forEach(members => {
+    const centroidLat = members.reduce((s, p) => s + p.lat, 0) / members.length;
+    const centroidLon = members.reduce((s, p) => s + p.lon, 0) / members.length;
+    const maxDist = Math.max(...members.map(p => haversineMeters(centroidLat, centroidLon, p.lat, p.lon)));
+    const maxFrp = Math.max(...members.map(p => parseFloat(p.r.frp) || 0));
+    const times = members.map(p => p.r.__ts).sort((a, b) => a - b);
+    const firstSeen = new Date(times[0]).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const lastSeen = new Date(times[times.length - 1]).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+    const circle = L.circle([centroidLat, centroidLon], {
+      radius: Math.max(maxDist, 300),
+      color: "#ffffff", weight: 2, fillOpacity: 0.05, fillColor: "#ffffff", pane: "trailPane"
+    }).bindPopup(
+      `<b>⚪ Événement feu</b> (regroupement de ${members.length} détections)<br/>` +
+      `FRP max : ${maxFrp} MW<br/>` +
+      `Première détection : ${firstSeen} UTC<br/>` +
+      `Dernière détection : ${lastSeen} UTC<br/>` +
+      `<span class="muted">Rayon ${Math.round(maxDist)} m · clustering DBSCAN, ε=2500m, min 3 pts</span>`
+    );
+    if (fireEventsVisible) circle.addTo(map);
+    fireEventCircles.push(circle);
+
+    lastFireEventClusters.push({
+      centroidLat, centroidLon, maxFrp,
+      firstTs: times[0], lastTs: times[times.length - 1]
+    });
+  });
+}
+
+function renderFiresForWindow() {
+  const slider = document.getElementById("timeline-slider");
+  const cursorTs = Number(slider.value);
+  const isLive = Math.abs(cursorTs - Date.now()) < 5 * 60 * 1000;
+  // Les boutons 1h/6h/24h/48h pilotent maintenant la fenêtre dans les deux modes (direct et historique).
+  const windowMs = timelineWindowHours * 3600 * 1000;
+  const visibleRows = allFireRows.filter(r => r.__ts <= cursorTs && r.__ts > cursorTs - windowMs);
+
+  fireMarkers.forEach(m => map.removeLayer(m));
+  fireMarkers = visibleRows.map(r => makeFireMarker(r, isLive, cursorTs, windowMs));
+  if (firesVisible) fireMarkers.forEach(m => m.addTo(map));
+
+  renderFireEvents(visibleRows);
+  renderSmokePlumes(cursorTs);
+
+  document.getElementById("fire-count").textContent = `${visibleRows.length} détection(s) (fenêtre ${timelineWindowHours} h)`;
+  const ageMaxEl = document.getElementById("legend-age-max");
+  if (ageMaxEl) ageMaxEl.textContent = `${timelineWindowHours}h`;
+  updateStatsBar(visibleRows, cursorTs);
+  const label = new Date(cursorTs).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  document.getElementById("timeline-label").textContent = (isLive ? "En direct · " : "") + label + " UTC";
+}
+
+document.getElementById("timeline-live-btn").addEventListener("click", () => {
+  const slider = document.getElementById("timeline-slider");
+  timelinePlaying = false;
+  clearInterval(timelinePlayTimer);
+  document.getElementById("timeline-play").textContent = "▶";
+  slider.value = slider.max;
+  slider.dataset.userSet = "1";
+  renderFiresForWindow();
+  renderPlanesForTimeline();
+  updateCloudsLayerForTimeline();
+  updateEffisLayersForTimeline();
+  updateMtgLayerForTimeline();
+  updateLiveButtonState();
+});
+
+document.getElementById("timeline-slider").addEventListener("input", (e) => {
+  e.target.dataset.userSet = "1";
+  renderFiresForWindow();
+  renderPlanesForTimeline();
+  updateCloudsLayerForTimeline();
+  updateEffisLayersForTimeline();
+  updateMtgLayerForTimeline();
+  updateLiveButtonState();
+});
+
+document.querySelectorAll(".tw-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tw-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    timelineWindowHours = Number(btn.dataset.hours);
+    renderFiresForWindow();
+    renderPlanesForTimeline();
+    updateCloudsLayerForTimeline();
+    updateEffisLayersForTimeline();
+    updateMtgLayerForTimeline();
+  updateMtgLayerForTimeline();
+    updateLiveButtonState();
+  });
+});
+
+let timelineSpeed = 1;
+document.querySelectorAll(".ts-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".ts-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    timelineSpeed = Number(btn.dataset.speed);
+  });
+});
+
+document.getElementById("timeline-play").addEventListener("click", () => {
+  const slider = document.getElementById("timeline-slider");
+  const btn = document.getElementById("timeline-play");
+  timelinePlaying = !timelinePlaying;
+  btn.textContent = timelinePlaying ? "⏸" : "▶";
+  if (timelinePlaying) {
+    // Repart du début si on est déjà à la fin.
+    if (Number(slider.value) >= Number(slider.max)) slider.value = slider.min;
+    const baseStepMs = (Number(slider.max) - Number(slider.min)) / 600; // pas de base (vitesse 1×)
+    timelinePlayTimer = setInterval(() => {
+      let v = Number(slider.value) + baseStepMs * timelineSpeed;
+      if (v >= Number(slider.max)) {
+        v = Number(slider.max);
+        timelinePlaying = false;
+        btn.textContent = "▶";
+        clearInterval(timelinePlayTimer);
+      }
+      slider.value = v;
+      slider.dataset.userSet = "1";
+      renderFiresForWindow();
+      renderPlanesForTimeline();
+      updateCloudsLayerForTimeline();
+      updateEffisLayersForTimeline();
+      updateMtgLayerForTimeline();
+    updateMtgLayerForTimeline();
+  updateMtgLayerForTimeline();
+      updateLiveButtonState();
+    }, 800);
+  } else {
+    clearInterval(timelinePlayTimer);
+  }
+});
+
+function timeAgo(dateStr, timeStr) {
+  // acq_date: YYYY-MM-DD, acq_time: HHMM (UTC)
+  if (!dateStr || !timeStr) return null;
+  const hh = timeStr.padStart(4, "0").slice(0, 2);
+  const mm = timeStr.padStart(4, "0").slice(2, 4);
+  const d = new Date(`${dateStr}T${hh}:${mm}:00Z`);
+  if (isNaN(d)) return null;
+  const diffMs = Date.now() - d.getTime();
+  const hours = diffMs / 3600000;
+  if (hours < 1) return `il y a ${Math.round(hours * 60)} min`;
+  return `il y a ${Math.round(hours)} h`;
+}
+
+function updateStatsPanel(allRows) {
+  const bySource = {};
+  FIRMS_SOURCES.forEach(s => bySource[s] = []);
+  allRows.forEach(r => { if (bySource[r.__source]) bySource[r.__source].push(r); });
+
+  let html = `<div class="stat-row"><span>Total détections</span><strong>${allRows.length}</strong></div>`;
+  html += `<div style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px">`;
+  FIRMS_SOURCES.forEach(s => {
+    const rows = bySource[s];
+    let freshness = "—";
+    if (rows.length > 0) {
+      const mostRecent = rows.reduce((latest, r) => {
+        const key = r.acq_date + r.acq_time;
+        return key > latest.key ? { key, r } : latest;
+      }, { key: "", r: rows[0] });
+      freshness = timeAgo(mostRecent.r.acq_date, mostRecent.r.acq_time) || "—";
+    }
+    html += `<div class="stat-row"><span class="muted">${s.replace("_NRT", "")}</span><span>${rows.length} · ${freshness}</span></div>`;
+  });
+  html += `</div>`;
+  document.getElementById("stats-content").innerHTML = html;
+}
+
+let windAnim = { gridByHour: null, hourKeys: [], particles: [], enabled: true, raf: null };
+
+// Grille régulière sur la France + zones limitrophes (~12x10 = 120 points).
+const WIND_GRID_BOUNDS = { west: -5.2, east: 9.7, south: 41.3, north: 51.2 };
+const WIND_GRID_COLS = 16, WIND_GRID_ROWS = 13; // ~208 points — réduit après avoir atteint la limite gratuite Open-Meteo (429) avec 594 points
+
+async function fetchWindGrid() {
+  const CACHE_KEY = "wind_grid_cache_v1";
+  const CACHE_MAX_AGE_MS = 30 * 60 * 1000; // 30 min
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.fetchedAt < CACHE_MAX_AGE_MS) {
+        windAnim.gridByHour = new Map(parsed.gridByHour);
+        windAnim.hourKeys = parsed.hourKeys;
+        console.log("Grille de vent chargée depuis le cache local (évite une requête Open-Meteo inutile).");
+        return;
+      }
+    }
+  } catch (e) { /* cache invalide, on refait la requête normalement */ }
+
+  const lats = [], lons = [];
+  for (let r = 0; r < WIND_GRID_ROWS; r++) {
+    for (let c = 0; c < WIND_GRID_COLS; c++) {
+      lats.push((WIND_GRID_BOUNDS.south + (WIND_GRID_BOUNDS.north - WIND_GRID_BOUNDS.south) * r / (WIND_GRID_ROWS - 1)).toFixed(3));
+      lons.push((WIND_GRID_BOUNDS.west + (WIND_GRID_BOUNDS.east - WIND_GRID_BOUNDS.west) * c / (WIND_GRID_COLS - 1)).toFixed(3));
+    }
+  }
+  // past_days=2 : historique horaire sur 48h dans le même appel (prévisions passées,
+  // pas des mesures observées — Open-Meteo ne fournit pas d'observations a posteriori en gratuit).
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(",")}&longitude=${lons.join(",")}&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms&past_days=2&forecast_days=1&models=meteofrance_arome_france_hd`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Grille vent : HTTP ${res.status}`);
+  const arr = await res.json();
+  console.log("Réponse grille vent horaire (AROME) :", arr);
+
+  const gridByHour = new Map(); // hourEpochMs -> [{lat, lon, u, v}, ...] (ordre = index de grille)
+  arr.forEach((loc, i) => {
+    const h = loc.hourly;
+    if (!h || !h.time) return;
+    h.time.forEach((timeStr, hIdx) => {
+      const hourTs = Date.parse(timeStr + "Z"); // Open-Meteo renvoie l'heure UTC sans suffixe explicite ici
+      const speed = h.wind_speed_10m[hIdx], dir = h.wind_direction_10m[hIdx];
+      if (speed == null || dir == null) return;
+      const headingTo = ((dir + 180) % 360) * Math.PI / 180;
+      if (!gridByHour.has(hourTs)) gridByHour.set(hourTs, new Array(WIND_GRID_COLS * WIND_GRID_ROWS));
+      gridByHour.get(hourTs)[i] = {
+        lat: parseFloat(lats[i]), lon: parseFloat(lons[i]),
+        u: speed * Math.sin(headingTo), v: speed * Math.cos(headingTo)
+      };
+    });
+  });
+
+  windAnim.gridByHour = gridByHour;
+  windAnim.hourKeys = Array.from(gridByHour.keys()).sort((a, b) => a - b);
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      fetchedAt: Date.now(),
+      gridByHour: Array.from(gridByHour.entries()),
+      hourKeys: windAnim.hourKeys
+    }));
+  } catch (e) { console.warn("Cache vent non sauvegardé (stockage plein ou indisponible) :", e); }
+}
+
+function getGridForTime(ts) {
+  const keys = windAnim.hourKeys;
+  if (!keys || keys.length === 0) return null;
+  // Heure la plus proche du curseur (résolution horaire — pas de minute précise disponible).
+  let nearest = keys[0], best = Infinity;
+  for (const k of keys) {
+    const d = Math.abs(k - ts);
+    if (d < best) { best = d; nearest = k; }
+  }
+  return windAnim.gridByHour.get(nearest);
+}
+
+function interpolateWind(lat, lon, ts) {
+  const points = getGridForTime(ts);
+  if (!points) return { u: 0, v: 0 };
+  const cols = WIND_GRID_COLS, rows = WIND_GRID_ROWS;
+  const fc = (lon - WIND_GRID_BOUNDS.west) / (WIND_GRID_BOUNDS.east - WIND_GRID_BOUNDS.west) * (cols - 1);
+  const fr = (lat - WIND_GRID_BOUNDS.south) / (WIND_GRID_BOUNDS.north - WIND_GRID_BOUNDS.south) * (rows - 1);
+  const c0 = Math.max(0, Math.min(cols - 2, Math.floor(fc))), r0 = Math.max(0, Math.min(rows - 2, Math.floor(fr)));
+  const tx = Math.min(1, Math.max(0, fc - c0)), ty = Math.min(1, Math.max(0, fr - r0));
+  const p = (r, c) => points[r * cols + c];
+  const p00 = p(r0, c0), p10 = p(r0, c0 + 1), p01 = p(r0 + 1, c0), p11 = p(r0 + 1, c0 + 1);
+  if (!p00 || !p10 || !p01 || !p11) return { u: 0, v: 0 };
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const u = lerp(lerp(p00.u, p10.u, tx), lerp(p01.u, p11.u, tx), ty);
+  const v = lerp(lerp(p00.v, p10.v, tx), lerp(p01.v, p11.v, tx), ty);
+  return { u, v };
+}
+
+// Vent à un point/instant donné, avec repli sur la mesure ponctuelle si la grille est indisponible
+// (ex: quota Open-Meteo dépassé) — évite que la fonctionnalité "passage de fumée" tombe en panne.
+function getWindVectorAt(lat, lon, ts) {
+  if (windAnim.hourKeys && windAnim.hourKeys.length > 0) {
+    return interpolateWind(lat, lon, ts);
+  }
+  if (lastKnownWind) {
+    const headingTo = ((lastKnownWind.dirDeg + 180) % 360) * Math.PI / 180;
+    const speedMs = lastKnownWind.speedKmh / 3.6;
+    return { u: speedMs * Math.sin(headingTo), v: speedMs * Math.cos(headingTo) };
+  }
+  return { u: 0, v: 0 };
+}
+
+// --- Panache de fumée (estimé) : même principe que GISFire — une bouffée émise chaque heure
+// depuis chaque foyer notable, transportée dans le vent réel heure par heure au lieu de suivre
+// un cône fixe. La largeur grandit avec l'incertitude mesurée (variation de direction du vent
+// rencontrée en route), pas avec un angle décidé d'avance. Ce n'est PAS une observation satellite.
+let smokePlumeEnabled = false;
+let smokePlumeLayers = [];
+const SMOKE_PLUME_NOTABLE_FRP = 5;        // MW minimum pour simuler un panache (filtre le bruit)
+const SMOKE_PLUME_MAX_HOURS = 12;         // profondeur max simulée en arrière
+const SMOKE_PLUME_BASE_RADIUS_M = 800;
+const SMOKE_PLUME_GROWTH_PER_HOUR_M = 500;
+
+function metersToLatLonDelta(lat, dEastM, dNorthM) {
+  const dLat = dNorthM / 111320;
+  const dLon = dEastM / (111320 * Math.cos(lat * Math.PI / 180));
+  return { dLat, dLon };
+}
+
+// Construit un polygone effile autour d'une ligne centrale dont la demi-largeur varie point
+// par point (contrairement a bufferPathToPolygon qui utilise une largeur constante). C'est ce
+// qui donne la forme de panache : etroit au foyer, large et diffus au loin.
+function taperedCorridor(points, halfWidths) {
+  if (points.length < 2) return null;
+  const left = [], right = [];
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const latRad = points[i].lat * Math.PI / 180;
+    const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos(latRad);
+    const dx = (next.lon - prev.lon) * mPerDegLon;
+    const dy = (next.lat - prev.lat) * mPerDegLat;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const w = halfWidths[i];
+    left.push([points[i].lat + (ny * w) / mPerDegLat, points[i].lon + (nx * w) / mPerDegLon]);
+    right.push([points[i].lat - (ny * w) / mPerDegLat, points[i].lon - (nx * w) / mPerDegLon]);
+  }
+  return left.concat(right.reverse());
+}
+
+function renderSmokePlumes(cursorTs) {
+  smokePlumeLayers.forEach(l => map.removeLayer(l));
+  smokePlumeLayers = [];
+  if (!smokePlumeEnabled) return;
+  const hasGrid = windAnim.hourKeys && windAnim.hourKeys.length > 0;
+  if (!hasGrid && !lastKnownWind) return;
+
+  lastFireEventClusters.forEach(cluster => {
+    if (cluster.maxFrp < SMOKE_PLUME_NOTABLE_FRP) return;
+
+    const maxHours = Math.min(SMOKE_PLUME_MAX_HOURS,
+      Math.max(1, Math.round((cursorTs - cluster.firstTs) / 3600000)));
+
+    // Ligne centrale du panache : position ACTUELLE de chaque bouffee, de la plus recente
+    // (au foyer) a la plus ancienne (la plus eloignee). Les bouffees ne sont plus dessinees
+    // separement : elles servent a construire une zone continue, plus lisible.
+    const centerline = [], halfWidths = [];
+    for (let h = 0; h <= maxHours; h++) {
+      const spawnTs = cursorTs - h * 3600000;
+      if (spawnTs < cluster.firstTs) break;
+
+      let lat = cluster.centroidLat, lon = cluster.centroidLon;
+      let firstBearing = null, maxDirDeviation = 0;
+      let t = spawnTs;
+      while (t < cursorTs) {
+        const { u, v } = getWindVectorAt(lat, lon, t);
+        const dtSeconds = Math.min(3600, (cursorTs - t) / 1000);
+        const { dLat, dLon } = metersToLatLonDelta(lat, u * dtSeconds, v * dtSeconds);
+        lat += dLat; lon += dLon;
+        const bearing = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
+        if (firstBearing === null) firstBearing = bearing;
+        else maxDirDeviation = Math.max(maxDirDeviation, angleDiff(firstBearing, bearing));
+        t += dtSeconds * 1000;
+      }
+
+      const varianceBonus = Math.min(1, maxDirDeviation / 90) * SMOKE_PLUME_GROWTH_PER_HOUR_M * 2;
+      centerline.push({ lat, lon });
+      halfWidths.push(SMOKE_PLUME_BASE_RADIUS_M + h * SMOKE_PLUME_GROWTH_PER_HOUR_M + varianceBonus);
+    }
+
+    if (centerline.length < 2) return;
+    const ring = taperedCorridor(centerline, halfWidths);
+    if (!ring) return;
+
+    const plume = L.polygon(ring, {
+      color: "#e2e8f0", weight: 1.5, opacity: 0.55,
+      fillColor: "#cbd5e1", fillOpacity: 0.18,
+      pane: "smokePane", interactive: true
+    }).bindPopup(
+      `<b>💨 Panache de fumée (estimé)</b><br/>` +
+      `Foyer de ${cluster.maxFrp} MW · ${centerline.length - 1} h de transport simulé<br/>` +
+      `<span class="muted">Trajectoire calculée dans le vent réel heure par heure. La largeur ` +
+      `grandit avec l'incertitude de direction rencontrée en route. Estimation, pas une mesure ` +
+      `de qualité de l'air ni une observation satellite.</span>`
+    );
+    plume.addTo(map);
+    smokePlumeLayers.push(plume);
+  });
+}
+
+document.getElementById("toggle-smoke-plume").addEventListener("change", (e) => {
+  smokePlumeEnabled = e.target.checked;
+  renderSmokePlumes(Number(document.getElementById("timeline-slider").value));
+});
+
+// --- Meteosat détection rapide (MSG, via proxy VPS/EUMETSAT) ---
+// Complète NASA FIRMS avec un cycle de répétition bien plus rapide (5-15 min contre 2-4
+// passages/jour), au prix d'une résolution bien plus grossière (~3-4 km/pixel, satellite
+// géostationnaire). Passe obligatoirement par le VPS : l'authentification OAuth2 EUMETSAT
+// ne peut pas être faite depuis le navigateur sans exposer le secret.
+const METEOSAT_FIRES_URL = `${API_BASE}/meteosat-fires?key=${API_SHARED_KEY}`;
+let meteosatEnabled = false;
+let meteosatTimer = null;
+let meteosatLayers = [];
+
+function renderMeteosatFires(data) {
+  meteosatLayers.forEach(l => map.removeLayer(l));
+  meteosatLayers = [];
+  if (!meteosatEnabled || !data || !data.fires) return;
+
+  const productTimeStr = data.product_time ? new Date(data.product_time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—";
+  data.fires.forEach(f => {
+    const popupHtml =
+      `<b>🛰️ Détection Meteosat (rapide)</b><br/>` +
+      `${f.headline || "Zone de chaleur détectée"}<br/>` +
+      `${f.areaDesc ? f.areaDesc + "<br/>" : ""}` +
+      `Produit à ${productTimeStr} UTC${f.severity ? " · sévérité " + f.severity : ""}<br/>` +
+      `<span class="muted">Résolution grossière (~3-4 km/pixel), satellite géostationnaire — utile pour la rapidité de détection, pas la précision de localisation.</span>`;
+
+    let layer = null;
+    if (f.type === "polygon" && f.coords && f.coords.length >= 3) {
+      layer = L.polygon(f.coords, { color: "#a855f7", weight: 1.5, opacity: 0.8, fillColor: "#a855f7", fillOpacity: 0.2, dashArray: "4,4", pane: "meteosatPane" });
+    } else if (f.type === "circle" && typeof f.lat === "number") {
+      layer = L.circle([f.lat, f.lon], { radius: f.radius_km * 1000, color: "#a855f7", weight: 1.5, opacity: 0.8, fillColor: "#a855f7", fillOpacity: 0.2, dashArray: "4,4", pane: "meteosatPane" });
+    }
+    if (layer) {
+      layer.bindPopup(popupHtml);
+      layer.addTo(map);
+      meteosatLayers.push(layer);
+    }
+  });
+}
+
+async function fetchMeteosatFires() {
+  if (!meteosatEnabled) return;
+  try {
+    const res = await fetch(METEOSAT_FIRES_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    console.log("Réponse Meteosat (via VPS) :", data);
+    renderMeteosatFires(data);
+  } catch (e) {
+    console.error("Échec Meteosat :", e);
+    showError("Détection rapide Meteosat indisponible : " + e.message);
+  }
+}
+
+document.getElementById("toggle-meteosat").addEventListener("change", (e) => {
+  meteosatEnabled = e.target.checked;
+  clearInterval(meteosatTimer);
+  if (meteosatEnabled) {
+    fetchMeteosatFires();
+    meteosatTimer = setInterval(fetchMeteosatFires, 3 * 60 * 1000); // toutes les 3 min, cohérent avec le cache VPS de 5 min
+  } else {
+    meteosatLayers.forEach(l => map.removeLayer(l));
+    meteosatLayers = [];
+  }
+});
+
+// --- "Passage de la fumée" : distance/ETA/fiabilité entre un foyer actif et un point choisi ---
+const SMOKE_ALIGN_TOLERANCE_DEG = 45; // au-delà, on considère que le vent ne porte pas la fumée vers ce point
+const SMOKE_MIN_WIND_MS = 0.3;        // en dessous, vent considéré comme quasi nul (pas de portée fiable)
+
+function computeSmokePassage(lat, lon) {
+  if (!allFireRows || allFireRows.length === 0) return { error: "Aucune détection de feu disponible pour l'instant." };
+  const nowTs = Date.now();
+  const activeFires = allFireRows.filter(r => nowTs - r.__ts < 12 * 3600 * 1000);
+  if (activeFires.length === 0) return { error: "Aucun foyer actif détecté dans les 12 dernières heures." };
+
+  let nearest = null, nearestDist = Infinity;
+  activeFires.forEach(r => {
+    const flat = parseFloat(r.latitude), flon = parseFloat(r.longitude);
+    const d = haversineMeters(flat, flon, lat, lon);
+    if (d < nearestDist) { nearestDist = d; nearest = { lat: flat, lon: flon, row: r }; }
+  });
+
+  const midLat = (nearest.lat + lat) / 2, midLon = (nearest.lon + lon) / 2;
+  const { u, v } = getWindVectorAt(midLat, midLon, nowTs);
+  const speedMs = Math.sqrt(u * u + v * v);
+  const windBearing = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360; // direction vers laquelle le vent souffle
+  const bearingFireToPoint = bearingDeg(nearest.lat, nearest.lon, lat, lon);
+  const diff = angleDiff(bearingFireToPoint, windBearing);
+  const aligned = diff <= SMOKE_ALIGN_TOLERANCE_DEG;
+
+  if (speedMs < SMOKE_MIN_WIND_MS) {
+    return { distanceKm: nearestDist / 1000, aligned: false, calmWind: true, nearest };
+  }
+
+  const etaSeconds = nearestDist / speedMs;
+  const etaTs = nowTs + etaSeconds * 1000;
+
+  // Fiabilité : variation de la direction du vent prévue entre maintenant et l'ETA (grille horaire si dispo).
+  let maxDeviation = 0;
+  if (windAnim.hourKeys && windAnim.hourKeys.length > 0) {
+    const relevantHours = windAnim.hourKeys.filter(h => h >= nowTs - 3600 * 1000 && h <= etaTs + 3600 * 1000);
+    const dirs = relevantHours.map(h => {
+      const { u: hu, v: hv } = interpolateWind(midLat, midLon, h);
+      return (Math.atan2(hu, hv) * 180 / Math.PI + 360) % 360;
+    });
+    for (let i = 1; i < dirs.length; i++) maxDeviation = Math.max(maxDeviation, angleDiff(dirs[0], dirs[i]));
+  }
+
+  return {
+    distanceKm: nearestDist / 1000, speedKmh: speedMs * 3.6,
+    aligned, diffDeg: diff, etaTs, etaSeconds, maxDeviation, nearest
+  };
+}
+
+let smokeCheckMode = false;
+let smokeCheckMarker = null;
+
+function showSmokePassagePopup(lat, lon) {
+  const result = computeSmokePassage(lat, lon);
+  let html;
+  if (result.error) {
+    html = `<b>💨 Passage de la fumée</b><br/><span class="muted">${result.error}</span>`;
+  } else if (result.calmWind) {
+    html = `<b>💨 Passage de la fumée</b><br/>Foyer le plus proche : ${result.distanceKm.toFixed(1)} km<br/>` +
+      `<span class="muted">Vent quasi nul actuellement — pas d'estimation fiable de transport de fumée.</span>`;
+  } else if (!result.aligned) {
+    html = `<b>💨 Passage de la fumée</b><br/>Foyer le plus proche : ${result.distanceKm.toFixed(1)} km<br/>` +
+      `<span class="muted">Le vent actuel (${Math.round(result.speedKmh)} km/h) ne semble pas porter la fumée vers ce point ` +
+      `(écart de ${Math.round(result.diffDeg)}° avec la direction du foyer). Estimation à partir du vent prévu, pas une garantie.</span>`;
+  } else {
+    const etaDate = new Date(result.etaTs);
+    const etaStr = etaDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const reliabilityNote = result.maxDeviation > 60
+      ? `<br/><span style="color:#f59e0b">⚠️ Trajectoire peu fiable, le vent tourne (${Math.round(result.maxDeviation)}° d'écart prévu).</span>`
+      : "";
+    html = `<b>💨 Passage de la fumée</b><br/>` +
+      `Attendue vers <b>${etaStr}</b> à ${result.distanceKm.toFixed(1)} km du foyer<br/>` +
+      `Vent actuel : ${Math.round(result.speedKmh)} km/h${reliabilityNote}<br/>` +
+      `<span class="muted">Estimation à partir du vent prévu, pas une mesure directe de fumée. En cas de doute, suis la préfecture et FR-Alert.</span>`;
+  }
+  if (smokeCheckMarker) map.removeLayer(smokeCheckMarker);
+  smokeCheckMarker = L.marker([lat, lon]).addTo(map).bindPopup(html).openPopup();
+}
+
+function resizeWindCanvas() {
+  const canvas = document.getElementById("wind-canvas");
+  const mapEl = document.getElementById("map");
+  canvas.width = mapEl.clientWidth;
+  canvas.height = mapEl.clientHeight;
+}
+
+function randomParticleLatLng() {
+  const b = map.getBounds();
+  return {
+    lat: b.getSouth() + Math.random() * (b.getNorth() - b.getSouth()),
+    lon: b.getWest() + Math.random() * (b.getEast() - b.getWest()),
+    life: 60 + Math.random() * 120
+  };
+}
+
+function startWindAnimation() {
+  const canvas = document.getElementById("wind-canvas");
+  const ctx = canvas.getContext("2d");
+  resizeWindCanvas();
+  windAnim.particles = Array.from({ length: 250 }, randomParticleLatLng);
+
+  function frame() {
+    // La boussole se met à jour même si l'animation des particules est désactivée (elle a sa
+    // propre case à cocher) — d'où sa position avant la garde ci-dessous. Throttlée à 1 s pour
+    // ne pas toucher au DOM 60 fois par seconde inutilement.
+    const tNow = performance.now();
+    if (!windAnim.lastCompassMs || tNow - windAnim.lastCompassMs > 1000) {
+      windAnim.lastCompassMs = tNow;
+      updateCompass();
+    }
+
+    // Avant : bloqué tant que la grille multi-points n'avait pas chargé, même avec un vent ponctuel
+    // disponible par ailleurs (AROME/Open-Meteo/met.no) — l'animation restait alors invisible en
+    // permanence en cas de 429 prolongé. Utilise maintenant le même repli que la fumée : grille si
+    // dispo, sinon champ uniforme basé sur la dernière mesure ponctuelle connue.
+    if (!windAnim.enabled || (!windAnim.gridByHour && !lastKnownWind)) { windAnim.raf = requestAnimationFrame(frame); return; }
+
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = "rgba(226, 232, 240, 0.85)"; // gris clair, lisible sur fond satellite sombre
+    ctx.lineWidth = 0.5;
+
+    const bounds = map.getBounds();
+    const cursorTs = Number(document.getElementById("timeline-slider").value) || Date.now();
+
+    // Temps réel écoulé depuis l'image précédente : sans ça, la vitesse dépendait du taux de
+    // rafraîchissement de l'écran au lieu du vent réel.
+    const nowMs = performance.now();
+    const dtSeconds = windAnim.lastFrameMs ? Math.min(0.1, (nowMs - windAnim.lastFrameMs) / 1000) : 0.016;
+    windAnim.lastFrameMs = nowMs;
+
+    windAnim.particles.forEach(pt => {
+      const { u, v } = getWindVectorAt(pt.lat, pt.lon, cursorTs);
+      const prevScreen = map.latLngToContainerPoint([pt.lat, pt.lon]);
+
+      // u et v sont en m/s (composantes est et nord). On les convertit en degrés avec la vraie
+      // géométrie : un degré de longitude est plus court qu'un degré de latitude (facteur cos(lat)).
+      // Avant, le même facteur était appliqué aux deux, ce qui déformait systématiquement la
+      // direction affichée — à cette latitude (~45°), jusqu'à ~20° d'écart, toujours dans le même
+      // sens (exagération de la composante nord-sud).
+      // Vitesse de défilement en fonction de la vitesse du vent :
+      //   déplacement = (u, v) x WIND_TIME_ACCELERATION x facteur x dt
+      //   facteur = (vitesse / WIND_REF_SPEED_MS) ^ (WIND_SPEED_GAMMA - 1)
+      // Avec GAMMA = 1, on obtient une proportionnalité stricte (un vent 2x plus fort defile
+      // 2x plus vite). GAMMA legerement > 1 accentue le contraste : une brise reste lente et
+      // un vent fort devient nettement plus rapide, ce qui se lit mieux a l'oeil. Le facteur
+      // vaut exactement 1 a la vitesse de reference, donc l'echelle globale reste calee dessus.
+      const WIND_TIME_ACCELERATION = 120;  // 2 min de vent reel par seconde d'ecran a la vitesse de reference
+      const WIND_REF_SPEED_MS = 5.5;       // ~20 km/h : vent courant, sert de point d'ancrage
+      const WIND_SPEED_GAMMA = 1.35;       // 1 = strictement proportionnel ; >1 = contraste accentue
+      const speedMs = Math.sqrt(u * u + v * v);
+      const factor = speedMs > 0.05
+        ? Math.pow(speedMs / WIND_REF_SPEED_MS, WIND_SPEED_GAMMA - 1)
+        : 0;
+      const simSeconds = dtSeconds * WIND_TIME_ACCELERATION * factor;
+      const { dLat, dLon } = metersToLatLonDelta(pt.lat, u * simSeconds, v * simSeconds);
+      pt.lon += dLon;
+      pt.lat += dLat;
+      pt.life--;
+
+      const nextScreen = map.latLngToContainerPoint([pt.lat, pt.lon]);
+      ctx.beginPath();
+      ctx.moveTo(prevScreen.x, prevScreen.y);
+      ctx.lineTo(nextScreen.x, nextScreen.y);
+      ctx.stroke();
+
+      if (pt.life <= 0 || !bounds.contains([pt.lat, pt.lon])) {
+        Object.assign(pt, randomParticleLatLng());
+      }
+    });
+
+    windAnim.raf = requestAnimationFrame(frame);
+  }
+  windAnim.raf = requestAnimationFrame(frame);
+}
+
+document.getElementById("toggle-wind-anim").addEventListener("change", (e) => {
+  windAnim.enabled = e.target.checked;
+  if (!windAnim.enabled) {
+    const canvas = document.getElementById("wind-canvas");
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  }
+});
+
+document.getElementById("wind-source-select").addEventListener("change", (e) => {
+  windSourcePreference = e.target.value;
+  console.log("Source de vent forcée :", windSourcePreference);
+  fetchWind(); // relance immédiatement avec la nouvelle préférence, sans attendre le prochain cycle de 5 min
+});
+
+window.addEventListener("resize", () => { if (document.getElementById("app").style.display !== "none") resizeWindCanvas(); });
+
+document.getElementById("toggle-fires").addEventListener("change", (e) => {
+  firesVisible = e.target.checked;
+  fireMarkers.forEach(m => {
+    if (firesVisible) map.addLayer(m); else map.removeLayer(m);
+  });
+});
+
+document.getElementById("toggle-fire-events").addEventListener("change", (e) => {
+  fireEventsVisible = e.target.checked;
+  fireEventCircles.forEach(c => {
+    if (fireEventsVisible) map.addLayer(c); else map.removeLayer(c);
+  });
+});
+
+let cloudsLayer = null;
+let cloudsEnabled = false;
+let cloudsCurrentDateStr = null;
+
+function getGibsDateStrForCursor() {
+  const slider = document.getElementById("timeline-slider");
+  const cursorTs = slider ? Number(slider.value) : Date.now();
+  const now = Date.now();
+  // GIBS VIIRS true color a un décalage de publication d'environ 1 jour : si le curseur pointe
+  // sur les dernières 24h (dont "maintenant"), la mosaïque du jour n'existe probablement pas encore
+  // → on recule d'un jour. Pour une position plus ancienne dans la frise, on utilise directement
+  // la date correspondante (mosaïque du jour concerné).
+  const effectiveTs = (now - cursorTs < 24 * 3600 * 1000) ? cursorTs - 24 * 3600 * 1000 : cursorTs;
+  const d = new Date(effectiveTs);
+  return d.toISOString().slice(0, 10);
+}
+
+function updateCloudsLayerForTimeline() {
+  if (!cloudsEnabled || !map) return;
+  const dateStr = getGibsDateStrForCursor();
+  if (dateStr === cloudsCurrentDateStr && cloudsLayer) return; // pas de changement de jour, rien à refaire
+  cloudsCurrentDateStr = dateStr;
+  if (cloudsLayer) map.removeLayer(cloudsLayer);
+  cloudsLayer = L.tileLayer(
+    `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${dateStr}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+    {
+      attribution: `Imagery courtesy of NASA GIBS / VIIRS SNPP — mosaïque du ${dateStr}`,
+      opacity: rasterOpacity,
+      // maxNativeZoom (et NON maxZoom) : GIBS ne fournit ce produit que jusqu'au niveau 9.
+      // Avec maxZoom:9, Leaflet MASQUAIT tout le calque dès qu'on zoomait plus près — c'est
+      // pourquoi les nuages n'apparaissaient jamais. Avec maxNativeZoom, Leaflet agrandit les
+      // tuiles du niveau 9 au lieu de cacher la couche (image plus floue de près, mais visible).
+      maxNativeZoom: 9,
+      maxZoom: 18,
+      zIndex: 220
+    }
+  );
+  cloudsLayer.addTo(map);
+}
+
+document.getElementById("toggle-clouds").addEventListener("change", (e) => {
+  cloudsEnabled = e.target.checked;
+  if (cloudsEnabled) {
+    updateCloudsLayerForTimeline();
+  } else if (cloudsLayer) {
+    map.removeLayer(cloudsLayer);
+    cloudsLayer = null;
+    cloudsCurrentDateStr = null;
+  }
+});
+
+// --- EFFIS (Copernicus / JRC) : calques WMS publics, sans clé API ---
+// Endpoint et noms de calques relevés sur les pages officielles EFFIS :
+//   - modis.ba.poly : base des zones brûlées mise à jour en temps réel
+//   - ecmwf007.fwi  : Fire Weather Index, prévision 1 jour (ECMWF ~8 km)
+// La doc EFFIS précise qu'un paramètre TIME est requis pour ces calques (contrairement aux
+// couches statiques type zones protégées ou Corine Land Cover) — on le cale sur la date du curseur.
+const EFFIS_WMS_URL = "https://maps.effis.emergency.copernicus.eu/effis";
+const EFFIS_ATTRIBUTION = "© EFFIS / Copernicus EMS — Commission européenne, JRC";
+let rasterOpacity = 0.7;
+let effisBaLayer = null, effisFwiLayer = null;
+let effisBaEnabled = false, effisFwiEnabled = false;
+let effisCurrentDateStr = null;
+let effisBa4326 = false, effisFwi4326 = false; // projection retenue une fois le repli déclenché
+
+function getEffisDateStrForCursor() {
+  const slider = document.getElementById("timeline-slider");
+  const cursorTs = slider ? Number(slider.value) : Date.now();
+  return new Date(cursorTs).toISOString().slice(0, 10);
+}
+
+// Certains serveurs WMS MapServer ne publient leurs calques qu'en EPSG:4326. Leaflet demande
+// par défaut la projection de la carte (EPSG:3857, coordonnées en mètres) — d'où des tuiles en
+// échec. On tente donc 3857 puis, si ça échoue, on rebascule automatiquement en 4326 (la
+// projection utilisée par tous les exemples officiels EFFIS) au lieu d'abandonner.
+function buildEffisLayer(layerName, dateStr, zIndex, onFallbackNeeded, useEpsg4326 = false) {
+  const opts = {
+    layers: layerName,
+    format: "image/png",
+    transparent: true,
+    version: "1.1.1",
+    time: dateStr,
+    opacity: rasterOpacity,
+    attribution: EFFIS_ATTRIBUTION,
+    zIndex: zIndex // empilement explicite : ne dépend plus de l'ordre d'ajout des calques
+  };
+  if (useEpsg4326) opts.crs = L.CRS.EPSG4326;
+
+  const layer = L.tileLayer.wms(EFFIS_WMS_URL, opts);
+  let handled = false;
+  layer.on("tileerror", (ev) => {
+    if (handled) return;
+    handled = true;
+    const url = ev && ev.tile ? ev.tile.src : "(url inconnue)";
+    if (!useEpsg4326 && typeof onFallbackNeeded === "function") {
+      console.warn(`EFFIS "${layerName}" : échec en EPSG:3857, nouvelle tentative en EPSG:4326.\nURL en échec : ${url}`);
+      onFallbackNeeded();
+      return;
+    }
+    console.error(`EFFIS "${layerName}" : échec aussi en EPSG:4326. URL testée :\n${url}`);
+    // Recupere le message d'erreur du serveur automatiquement plutot que de demander a
+    // l'utilisateur d'ouvrir l'URL a la main. Peut echouer si le serveur refuse le CORS —
+    // dans ce cas seulement, on retombe sur l'ouverture manuelle.
+    fetch(url)
+      .then(r => r.text())
+      .then(txt => {
+        console.error(`EFFIS "${layerName}" — reponse brute du serveur :\n${txt.slice(0, 1200)}`);
+        showError(`Calque EFFIS "${layerName}" refuse par le serveur — message complet dans la console (F12).`);
+      })
+      .catch(() => {
+        console.error(`EFFIS "${layerName}" : impossible de lire la reponse (blocage CORS).\n` +
+          `Ouvre cette URL dans un onglet pour voir le message du serveur :\n${url}`);
+        showError(`Calque EFFIS "${layerName}" indisponible — ouvre l'URL affichee en console (F12) pour le detail.`);
+      });
+  });
+  return layer;
+}
+
+function updateEffisLayersForTimeline() {
+  if (!map) return;
+  const dateStr = getEffisDateStrForCursor();
+  const dateChanged = dateStr !== effisCurrentDateStr;
+  effisCurrentDateStr = dateStr;
+
+  // Une fois qu'on sait qu'un calque n'accepte que le 4326, on le retient pour la session :
+  // inutile de refaire échouer la tentative 3857 à chaque changement de date ou de zoom.
+  if (effisBaEnabled) {
+    if (!effisBaLayer || dateChanged) {
+      if (effisBaLayer) map.removeLayer(effisBaLayer);
+      effisBaLayer = buildEffisLayer("modis.ba.poly", dateStr, 210, () => {
+        if (effisBaLayer) map.removeLayer(effisBaLayer);
+        effisBa4326 = true;
+        effisBaLayer = buildEffisLayer("modis.ba.poly", dateStr, 210, null, true);
+        effisBaLayer.addTo(map);
+      }, effisBa4326);
+      effisBaLayer.addTo(map);
+    }
+  } else if (effisBaLayer) {
+    map.removeLayer(effisBaLayer);
+    effisBaLayer = null;
+  }
+
+  if (effisFwiEnabled) {
+    if (!effisFwiLayer || dateChanged) {
+      if (effisFwiLayer) map.removeLayer(effisFwiLayer);
+      effisFwiLayer = buildEffisLayer("ecmwf007.fwi", dateStr, 200, () => {
+        if (effisFwiLayer) map.removeLayer(effisFwiLayer);
+        effisFwi4326 = true;
+        effisFwiLayer = buildEffisLayer("ecmwf007.fwi", dateStr, 200, null, true);
+        effisFwiLayer.addTo(map);
+      }, effisFwi4326);
+      effisFwiLayer.addTo(map);
+    }
+  } else if (effisFwiLayer) {
+    map.removeLayer(effisFwiLayer);
+    effisFwiLayer = null;
+  }
+}
+
+document.getElementById("toggle-effis-ba").addEventListener("change", (e) => {
+  effisBaEnabled = e.target.checked;
+  updateEffisLayersForTimeline();
+  updateMtgLayerForTimeline();
+});
+
+document.getElementById("toggle-effis-fwi").addEventListener("change", (e) => {
+  effisFwiEnabled = e.target.checked;
+  updateEffisLayersForTimeline();
+  updateMtgLayerForTimeline();
+});
+
+// Opacité partagée par tous les calques images (EFFIS + imagerie NASA GIBS).
+document.getElementById("raster-opacity").addEventListener("input", (e) => {
+  rasterOpacity = Number(e.target.value) / 100;
+  document.getElementById("raster-opacity-value").textContent = `${e.target.value} %`;
+  [cloudsLayer, effisBaLayer, effisFwiLayer].forEach(l => { if (l) l.setOpacity(rasterOpacity); });
+});
+
+// --- Partage par URL : encode la vue (position, zoom, calques actifs, position de la frise)
+// dans le fragment d'URL. Le fragment n'est jamais envoyé au serveur, donc aucune donnée ne fuite
+// côté réseau — c'est juste un lien à copier/coller.
+const SHAREABLE_TOGGLES = [
+  "toggle-wind-anim", "toggle-planes", "toggle-drops", "toggle-fire-events",
+  "toggle-smoke-plume", "toggle-meteosat", "toggle-clouds", "toggle-aqi",
+  "toggle-effis-ba", "toggle-effis-fwi", "toggle-compass", "toggle-wind-probe",
+  "toggle-s2cloudless", "toggle-ign-ortho", "toggle-labels",
+  "toggle-progression-colors", "toggle-mtg-imagery", "toggle-stats-bar",
+  "toggle-aqi-probe"
+];
+
+function buildShareUrl() {
+  const c = map.getCenter();
+  const active = SHAREABLE_TOGGLES.filter(id => {
+    const el = document.getElementById(id);
+    return el && el.checked;
+  });
+  const params = new URLSearchParams({
+    lat: c.lat.toFixed(5),
+    lon: c.lng.toFixed(5),
+    z: String(map.getZoom()),
+    layers: active.join(",")
+  });
+  return `${location.origin}${location.pathname}#${params.toString()}`;
+}
+
+function applyShareUrlIfPresent() {
+  if (!location.hash || location.hash.length < 2) return;
+  const params = new URLSearchParams(location.hash.slice(1));
+  const lat = parseFloat(params.get("lat")), lon = parseFloat(params.get("lon"));
+  const z = parseInt(params.get("z"), 10);
+  if (!isNaN(lat) && !isNaN(lon) && !isNaN(z)) map.setView([lat, lon], z);
+
+  const layers = (params.get("layers") || "").split(",").filter(Boolean);
+  layers.forEach(id => {
+    const el = document.getElementById(id);
+    // Coche puis déclenche l'événement, pour que chaque calque s'initialise par sa propre logique
+    // (plutôt que de dupliquer ici la façon d'activer chacun).
+    if (el && !el.checked) {
+      el.checked = true;
+      el.dispatchEvent(new Event("change"));
+    }
+  });
+}
+
+document.getElementById("share-btn").addEventListener("click", async () => {
+  const url = buildShareUrl();
+  const btn = document.getElementById("share-btn");
+  const original = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = "✓ Lien copié";
+  } catch (e) {
+    // navigator.clipboard échoue hors HTTPS/localhost : on met le lien dans l'URL en repli,
+    // l'utilisateur peut alors le copier depuis la barre d'adresse.
+    console.warn("Copie dans le presse-papier refusée (probablement hors HTTPS) :", e);
+    location.hash = new URL(url).hash.slice(1);
+    btn.textContent = "↑ Copie depuis la barre d'adresse";
+  }
+  setTimeout(() => { btn.textContent = original; }, 2500);
+});
+
+async function fetchFires() {
+  if (!map) { showError("La carte n'est pas initialisée — voir le message d'erreur ci-dessus."); return; }
+  const btn = document.getElementById("refresh-btn");
+  btn.disabled = true;
+  showError("");
+  try {
+    const results = await Promise.allSettled(
+      FIRMS_SOURCES.map(src =>
+        // Si le proxy serveur est disponible, on passe par lui : le visiteur n'a alors pas
+        // besoin de sa propre cle FIRMS. Sinon (fichier ouvert en local sans VPS joignable),
+        // on retombe sur l'appel direct avec la cle saisie a l'ecran d'accueil.
+        fetch(firmsProxyAvailable
+          ? `${API_BASE}/fires?source=${src}&bbox=${FRANCE_BBOX}&days=2&key=${API_SHARED_KEY}`
+          : `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${mapKey}/${src}/${FRANCE_BBOX}/2`)
+          .then(async res => {
+            if (!res.ok) throw new Error(`${src}: statut HTTP ${res.status}`);
+            const text = await res.text();
+            if (/invalid|error/i.test(text.slice(0, 100))) {
+              throw new Error(`${src}: réponse invalide (clé incorrecte ou quota dépassé)`);
+            }
+            return parseCSV(text).map(r => ({ ...r, __source: src }));
+          })
+      )
+    );
+
+    const allRows = [];
+    const failures = [];
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") allRows.push(...r.value);
+      else failures.push(r.reason.message || String(r.reason));
+    });
+
+    if (allRows.length === 0 && failures.length > 0) {
+      throw new Error(failures[0].includes("Failed to fetch")
+        ? "Impossible de contacter l'API FIRMS depuis ce navigateur — probable blocage CORS."
+        : failures.join(" | "));
+    }
+    if (failures.length > 0) {
+      showError(`Attention : ${failures.length}/${FIRMS_SOURCES.length} source(s) FIRMS ont échoué (${failures.join(" ; ")}). Les autres se sont bien chargées.`);
+    }
+
+    allRows.forEach(r => {
+      const hh = (r.acq_time || "0000").padStart(4, "0").slice(0, 2);
+      const mm = (r.acq_time || "0000").padStart(4, "0").slice(2, 4);
+      r.__ts = Date.parse(`${r.acq_date}T${hh}:${mm}:00Z`);
+    });
+    allFireRows = allRows.filter(r => r.latitude && r.longitude && !isNaN(r.__ts));
+
+    setupTimeline(allFireRows);
+    renderFiresForWindow();
+
+    updateStatsPanel(allFireRows);
+    document.getElementById("last-update").textContent = "Mis à jour " + new Date().toLocaleTimeString("fr-FR");
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// --- Bandeau de statistiques ---------------------------------------------------------------
+// Toutes ces valeurs sont des ESTIMATIONS calculees sur les detections de la fenetre affichee.
+let statsBarEnabled = true;
+
+// Surface : chaque detection couvre un pixel capteur (VIIRS 375 m ~ 14 ha, MODIS 1 km ~ 100 ha).
+// Additionner betement les pixels surestimerait fortement, car plusieurs satellites reperent
+// le meme foyer et un meme point est revu a chaque passage. On deduplique donc sur une grille
+// a la resolution du capteur avant de sommer : c'est une approximation basse, pas un releve.
+const SENSOR_CELL_M = { VIIRS: 375, MODIS: 1000 };
+
+function estimateBurnedHectares(rows) {
+  const cells = new Map(); // cle de cellule -> surface de la cellule en hectares
+  rows.forEach(r => {
+    const isModis = String(r.__source || "").toUpperCase().includes("MODIS");
+    const cellM = isModis ? SENSOR_CELL_M.MODIS : SENSOR_CELL_M.VIIRS;
+    const lat = parseFloat(r.latitude), lon = parseFloat(r.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
+    const dLat = cellM / 111320;
+    const dLon = cellM / (111320 * Math.cos(lat * Math.PI / 180));
+    const key = `${cellM}:${Math.round(lat / dLat)}:${Math.round(lon / dLon)}`;
+    if (!cells.has(key)) cells.set(key, (cellM * cellM) / 10000); // m2 -> hectares
+  });
+  let total = 0;
+  cells.forEach(v => { total += v; });
+  return total;
+}
+
+function formatCompact(n, unit) {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)} k${unit}`;
+  return `${Math.round(n)} ${unit}`;
+}
+
+function updateStatsBar(visibleRows, cursorTs) {
+  const bar = document.getElementById("stats-bar");
+  if (!bar) return;
+  bar.classList.toggle("hidden", !statsBarEnabled);
+  if (!statsBarEnabled) return;
+
+  const ha = estimateBurnedHectares(visibleRows);
+  // Somme des puissances radiatives instantanees. Attention : additionner des mesures prises a
+  // des instants differents ne donne PAS une energie ; c'est un indicateur d'intensite cumulee,
+  // utile pour comparer deux periodes entre elles, pas une grandeur physique exacte.
+  const totalMw = visibleRows.reduce((acc, r) => acc + (parseFloat(r.frp) || 0), 0);
+  const recent = visibleRows.filter(r => (cursorTs - r.__ts) <= 6 * 3600 * 1000).length;
+
+  document.getElementById("stat-detections").textContent = visibleRows.length;
+  document.getElementById("stat-area").textContent = formatCompact(ha, "ha");
+  document.getElementById("stat-power").textContent = totalMw >= 1000
+    ? `${(totalMw / 1000).toFixed(1)} GW` : `${Math.round(totalMw)} MW`;
+  document.getElementById("stat-recent").textContent = recent;
+}
+
+document.getElementById("toggle-stats-bar").addEventListener("change", (e) => {
+  statsBarEnabled = e.target.checked;
+  const bar = document.getElementById("stats-bar");
+  if (bar) bar.classList.toggle("hidden", !statsBarEnabled);
+});
+
+// La legende doit toujours decrire la palette reellement utilisee, sinon elle induit en erreur.
+function syncAgeLegend() {
+  const bar = document.getElementById("legend-age-bar");
+  const title = document.getElementById("legend-age-title");
+  if (!bar || !title) return;
+  if (progressionColorsEnabled) {
+    // Memes couleurs et memes positions que PROGRESSION_STOPS, pour que la legende corresponde
+    // exactement au rendu sur la carte.
+    const stops = PROGRESSION_STOPS
+      .map(st => `${rgbHex(st.rgb)} ${(st.at * 100).toFixed(0)}%`)
+      .join(", ");
+    bar.style.background = `linear-gradient(to right, ${stops})`;
+    title.textContent = "Progression du feu : front actif → refroidi";
+  } else {
+    bar.style.background = "linear-gradient(to right, #ff7a00, #64748b)";
+    title.textContent = "En direct : actif → probablement éteint";
+  }
+}
+
+document.getElementById("toggle-progression-colors").addEventListener("change", (e) => {
+  progressionColorsEnabled = e.target.checked;
+  syncAgeLegend();
+  renderFiresForWindow();
+});
+
+// --- Ortho-photo IGN + toponymes ------------------------------------------------------------
+// IGN Geoplateforme : WMTS public, sans cle API (les anciennes URLs wxs.ign.fr a cle sont
+// retirees). Couverture France uniquement — d'ou le repli sur Sentinel-2 hors de France.
+let ignLayer = null, labelsLayer = null;
+let ignEnabled = true, labelsEnabled = true;
+const IGN_URL = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+  "&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg" +
+  "&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
+
+// Toponymes : tuiles raster "labels only" de CARTO, concues pour se superposer a de l'imagerie
+// satellite (qui ne porte aucun nom de lieu).
+const LABELS_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}{r}.png";
+
+function applyBaseLayers() {
+  if (!map) return;
+  // Priorite : ortho IGN > Sentinel-2 > OpenStreetMap. Un seul fond visible a la fois.
+  [ignLayer, s2Layer, osmLayer].forEach(l => { if (l && map.hasLayer(l)) map.removeLayer(l); });
+
+  if (ignEnabled) {
+    if (!ignLayer) {
+      ignLayer = L.tileLayer(IGN_URL, {
+        attribution: 'Ortho-photo &copy; <a href="https://geoservices.ign.fr/">IGN</a> / Géoplateforme',
+        maxNativeZoom: 19, maxZoom: 19, zIndex: 100
+      });
+    }
+    ignLayer.addTo(map);
+  } else if (s2Enabled) {
+    ensureS2Layer();
+    s2Layer.addTo(map);
+  } else {
+    if (osmLayer) osmLayer.addTo(map);
+  }
+
+  if (labelsEnabled) {
+    if (!labelsLayer) {
+      labelsLayer = L.tileLayer(LABELS_URL, {
+        attribution: '&copy; <a href="https://carto.com/about-carto/">CARTO</a>, &copy; <a href="http://www.openstreetmap.org/about/">OpenStreetMap</a> contributors',
+        maxZoom: 19, zIndex: 250, // au-dessus des calques images (EFFIS 200/210, GIBS 220)
+        subdomains: "abcd"
+      });
+    }
+    labelsLayer.addTo(map);
+  } else if (labelsLayer && map.hasLayer(labelsLayer)) {
+    map.removeLayer(labelsLayer);
+  }
+}
+
+document.getElementById("toggle-ign-ortho").addEventListener("change", (e) => {
+  ignEnabled = e.target.checked;
+  applyBaseLayers();
+  syncAgeLegend(); // la legende doit refleter la palette active des le demarrage
+});
+
+document.getElementById("toggle-labels").addEventListener("change", (e) => {
+  labelsEnabled = e.target.checked;
+  applyBaseLayers();
+});
+
+// --- Fond Sentinel-2 cloudless (EOX) ---
+// Mosaïque satellite annuelle quasi sans nuages, le même fond que GISFire. Identifiants de
+// calque vérifiés : s2cloudless-<année>, disponibles en EPSG:3857 comme en 4326.
+// Licence : libre pour usage NON COMMERCIAL, attribution EOX obligatoire avec les liens
+// (elle est donc codée telle qu'exigée ci-dessous). Un usage commercial exigerait une licence EOX.
+let osmLayer = null, s2Layer = null;
+const S2_YEAR = 2024; // millésime le plus récent publié par EOX
+const S2_ATTRIBUTION =
+  'Sentinel-2 cloudless - <a href="https://s2maps.eu">https://s2maps.eu</a> by ' +
+  '<a href="https://eox.at">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data ' + S2_YEAR + ')';
+
+let s2Enabled = true;
+
+function ensureS2Layer() {
+  if (s2Layer) return;
+  // WMTS REST (et non WMS) : c'est le mode d'accès aux tuiles publié par EOX. Le calque en
+  // Web Mercator porte le suffixe _3857 et le jeu de tuiles s'appelle "g". L'ordre du chemin
+  // est {z}/{y}/{x} (ligne avant colonne), conformément au standard WMTS.
+  s2Layer = L.tileLayer(
+    `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${S2_YEAR}_3857/default/g/{z}/{y}/{x}.jpg`,
+    {
+      attribution: S2_ATTRIBUTION,
+      maxZoom: 18,
+      maxNativeZoom: 16, // la mosaïque annuelle s'arrête vers 10 m/pixel : on agrandit au-delà
+      zIndex: 100
+    }
+  );
+  let reported = false;
+  s2Layer.on("tileerror", (ev) => {
+    if (reported) return;
+    reported = true;
+    console.error("Sentinel-2 cloudless (EOX) : échec de chargement des tuiles. URL testée :\n" +
+      (ev && ev.tile ? ev.tile.src : "(inconnue)"));
+    showError("Fond Sentinel-2 indisponible — détail dans la console (F12).");
+  });
+}
+
+document.getElementById("toggle-s2cloudless").addEventListener("change", (e) => {
+  s2Enabled = e.target.checked;
+  applyBaseLayers();
+});
+
+// --- Imagerie thermique MTG (EUMETView) -----------------------------------------------------
+// WMS public d'EUMETSAT, sans authentification (contrairement au Data Store utilisé pour les
+// alertes CAP). Composition "Fire Temperature RGB" : les feux intenses ressortent en jaune-blanc,
+// les plus faibles en rouge. Résolution 500 m, une image toutes les 10 minutes.
+// Le TIME suit le curseur de la frise, arrondi au pas de 10 min : le bouton ▶ anime donc
+// l'imagerie en même temps que les détections, sans mécanisme d'animation séparé.
+const MTG_WMS_URL = "https://view.eumetsat.int/geoserver/wms";
+const MTG_LAYER = "mtg_fd:rgb_firetemperature";
+let mtgLayer = null, mtgEnabled = false, mtgCurrentTime = null;
+
+function mtgTimeForCursor(cursorTs) {
+  const step = 10 * 60 * 1000;
+  return new Date(Math.floor(cursorTs / step) * step).toISOString().slice(0, 19) + "Z";
+}
+
+function updateMtgLayerForTimeline() {
+  if (!map) return;
+  if (!mtgEnabled) {
+    if (mtgLayer) { map.removeLayer(mtgLayer); mtgLayer = null; mtgCurrentTime = null; }
+    return;
+  }
+  const slider = document.getElementById("timeline-slider");
+  const cursorTs = slider ? Number(slider.value) : Date.now();
+  const timeStr = mtgTimeForCursor(cursorTs);
+  if (mtgLayer && timeStr === mtgCurrentTime) return;
+  if (mtgLayer) map.removeLayer(mtgLayer);
+  mtgCurrentTime = timeStr;
+
+  mtgLayer = L.tileLayer.wms(MTG_WMS_URL, {
+    layers: MTG_LAYER,
+    format: "image/png",
+    transparent: true,
+    version: "1.3.0",
+    time: timeStr,
+    opacity: rasterOpacity,
+    zIndex: 230, // au-dessus de GIBS (220), sous les toponymes (250)
+    attribution: '&copy; <a href="https://view.eumetsat.int/">EUMETSAT</a> — MTG/FCI'
+  });
+  let reported = false;
+  mtgLayer.on("tileerror", (ev) => {
+    if (reported) return;
+    reported = true;
+    console.error(`MTG (EUMETView) : échec des tuiles pour "${MTG_LAYER}" à ${timeStr}. URL testée :\n` +
+      (ev && ev.tile ? ev.tile.src : "(inconnue)") +
+      `\nSi le serveur renvoie du XML, la liste des noms de calques valides est ici :\n` +
+      `${MTG_WMS_URL}?service=WMS&version=1.3.0&request=GetCapabilities`);
+    showError("Imagerie MTG indisponible — détail dans la console (F12). Normal aussi la nuit (capteur solaire).");
+  });
+  mtgLayer.addTo(map);
+}
+
+document.getElementById("toggle-mtg-imagery").addEventListener("change", (e) => {
+  mtgEnabled = e.target.checked;
+  updateMtgLayerForTimeline();
+});
+
+function initMap() {
+ try {
+  map = L.map("map", { attributionControl: true, zoomControl: true }).setView([45.29, 2.25], 5);
+
+  // Fond OpenStreetMap standard — fiable, pas besoin de worker, fonctionne en file://.
+  // Note honnête : le fond Sentinel-2 cloudless (EOX) utilisé par Flamap donnerait un rendu
+  // plus proche de leur carte, mais je n'ai pas pu vérifier son URL exacte de tuiles.
+  // Tu peux demander à l'essayer en second temps si ce fond OSM te convient pour l'instant.
+  osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18,
+    zIndex: 100 // fond de carte : toujours sous les calques images (EFFIS 200/210, GIBS 220)
+  }).addTo(map);
+
+  // Empilement explicite des calques vectoriels. Sans ça, tout allait dans le panneau
+  // "overlayPane" unique de Leaflet et l'ordre dépendait de l'ordre d'ajout — donc changeait
+  // au fil des rafraîchissements (un panache de fumée pouvait finir par-dessus les foyers).
+  // Ordre voulu, du fond vers le dessus : fumée → Meteosat → largages → traînées → feux.
+  // Les marqueurs d'avions restent dans le markerPane natif (600), donc au-dessus de tout,
+  // et les popups dans le popupPane (700).
+  [
+    ["smokePane", 410],
+    ["meteosatPane", 415],
+    ["dropPane", 420],
+    ["trailPane", 425],
+    ["firePane", 430]
+  ].forEach(([name, z]) => {
+    map.createPane(name);
+    map.getPane(name).style.zIndex = String(z);
+  });
+
+  fetchFires();
+  startCountdown(15 * 60);
+  setInterval(() => { fetchFires(); startCountdown(15 * 60); }, 15 * 60 * 1000);
+
+  map.on("click", (e) => {
+    if (smokeCheckMode) {
+      showSmokePassagePopup(e.latlng.lat, e.latlng.lng);
+      return; // le mode "passage de fumée" garde la priorité s'il est actif
+    }
+    if (aqiProbeEnabled) { showAqiProbePopup(e.latlng.lat, e.latlng.lng); return; }
+    if (windProbeEnabled) showWindProbePopup(e.latlng.lat, e.latlng.lng);
+  });
+ } catch (e) {
+    showError("Échec d'initialisation de la carte : " + (e && e.message ? e.message : String(e)));
+ }
+}
+
+// --- Sonde de vent au clic : affiche le vent au point cliqué, façon relevé nautique
+// (noeuds + degrés). Indépendante de l'animation des particules : on peut vouloir sonder le vent
+// sans afficher les filets à l'écran, et inversement.
+let windProbeEnabled = false; // désactivée par défaut
+
+document.getElementById("toggle-wind-probe").addEventListener("change", (e) => {
+  windProbeEnabled = e.target.checked;
+});
+
+function showWindProbePopup(lat, lon) {
+  const cursorTs = Number(document.getElementById("timeline-slider").value) || Date.now();
+  const { u, v } = getWindVectorAt(lat, lon, cursorTs);
+  const speedMs = Math.sqrt(u * u + v * v);
+
+  if (speedMs < 0.01) {
+    L.popup().setLatLng([lat, lon])
+      .setContent(`<b>🧭 Vent au point cliqué</b><br/><span class="muted">Donnée de vent indisponible ici (grille non chargée ou hors couverture).</span>`)
+      .openOn(map);
+    return;
+  }
+
+  const speedKmh = speedMs * 3.6;
+  const speedKt = speedMs * 1.94384;
+  // u/v pointent vers où va le vent ; on repasse en convention météo (d'où il vient) pour
+  // rester cohérent avec l'affichage du bandeau et avec les relevés météo classiques.
+  const headingToDeg = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
+  const fromDeg = (headingToDeg + 180) % 360;
+  const b = beaufort(speedKmh);
+  const isGrid = windAnim.hourKeys && windAnim.hourKeys.length > 0;
+
+  L.popup().setLatLng([lat, lon]).setContent(
+    `<div style="text-align:center">` +
+    `<b>🧭 Vent au point cliqué</b><br/>` +
+    `<b>${speedKt.toFixed(0)} noeuds</b> (${speedKmh.toFixed(0)} km/h)<br/>` +
+    `${fromDeg.toFixed(0)}° (${cardinal(fromDeg)})` +
+    `</div>` +
+    `<details style="margin-top:4px">` +
+    `<summary class="muted" style="cursor:pointer;font-size:11px">Détails</summary>` +
+    `<div class="muted" style="font-size:11px;margin-top:4px">` +
+    `Vient du ${fromDeg.toFixed(0)}° (${cardinal(fromDeg)}) → va vers ${cardinal(headingToDeg)}<br/>` +
+    `F${b.force} ${b.label}<br/>` +
+    `${isGrid ? "Grille horaire AROME interpolée" : "Repli : mesure ponctuelle unique, identique partout"}` +
+    `</div></details>`
+  ).openOn(map);
+}
+
+// --- Boussole : reflète le vent au centre de la carte visible, actualisée en continu.
+// La flèche pointe vers où le vent VA (plus intuitif visuellement), tandis que le libellé
+// donne la convention météo (d'où il vient), comme le bandeau du haut.
+let compassEnabled = true;
+
+function updateCompass() {
+  const el = document.getElementById("compass");
+  if (!el) return;
+  if (!compassEnabled || !map) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+
+  const c = map.getCenter();
+  const cursorTs = Number(document.getElementById("timeline-slider").value) || Date.now();
+  const { u, v } = getWindVectorAt(c.lat, c.lng, cursorTs);
+  const speedMs = Math.sqrt(u * u + v * v);
+  const arrow = document.getElementById("compass-arrow");
+  const label = document.getElementById("compass-label");
+
+  if (speedMs < 0.01) {
+    label.textContent = "vent indisponible";
+    return;
+  }
+  const headingToDeg = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
+  const fromDeg = (headingToDeg + 180) % 360;
+  arrow.setAttribute("transform", `rotate(${headingToDeg.toFixed(1)} 50 50)`);
+  label.textContent = `${(speedMs * 1.94384).toFixed(0)} nds · vent de ${cardinal(fromDeg)}`;
+}
+
+document.getElementById("toggle-compass").addEventListener("change", (e) => {
+  compassEnabled = e.target.checked;
+  updateCompass();
+});
+
+// --- Sonde qualite de l'air au clic ---------------------------------------------------------
+// Interroge Open-Meteo Air Quality au point clique (modele CAMS Europe). Requete a la demande :
+// un seul appel par clic, donc sans risque pour le quota, contrairement a un balayage continu.
+let aqiProbeEnabled = false;
+
+document.getElementById("toggle-aqi-probe").addEventListener("change", (e) => {
+  aqiProbeEnabled = e.target.checked;
+});
+
+async function showAqiProbePopup(lat, lon) {
+  const popup = L.popup().setLatLng([lat, lon])
+    .setContent('<div style="text-align:center"><b>🌫️ Qualité de l\'air</b><br/><span class="muted">Mesure en cours…</span></div>')
+    .openOn(map);
+  try {
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat.toFixed(4)}` +
+      `&longitude=${lon.toFixed(4)}&current=european_aqi,pm2_5,pm10`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const c = data.current;
+    if (!c || c.european_aqi === undefined) throw new Error("Indice absent de la réponse.");
+    const q = aqiCategory(c.european_aqi); // reutilise la meme echelle que le panneau lateral
+    popup.setContent(
+      `<div style="text-align:center">` +
+      `<b>🌫️ Qualité de l'air</b><br/>` +
+      `<b style="color:${q.color}">Indice ${Math.round(c.european_aqi)} · ${q.label}</b><br/>` +
+      `PM2.5 : ${c.pm2_5} µg/m³ · PM10 : ${c.pm10} µg/m³` +
+      `<details style="margin-top:4px;text-align:left">` +
+      `<summary class="muted" style="cursor:pointer;font-size:11px">Détails</summary>` +
+      `<div class="muted" style="font-size:11px;margin-top:4px">` +
+      `Indice européen CAMS via Open-Meteo, résolution régionale (~10 km) et mise à jour 2×/jour. ` +
+      `Ce n'est pas une mesure de station locale : près d'un feu, la valeur réelle peut être bien plus élevée.` +
+      `</div></details></div>`
+    );
+  } catch (e) {
+    console.error("Sonde qualité de l'air :", e);
+    popup.setContent(`<div style="text-align:center"><b>🌫️ Qualité de l'air</b><br/><span class="muted">Indisponible : ${e.message}</span></div>`);
+  }
+}
+
+document.getElementById("toggle-smoke-check").addEventListener("click", () => {
+  smokeCheckMode = !smokeCheckMode;
+  const btn = document.getElementById("toggle-smoke-check");
+  btn.style.background = smokeCheckMode ? "#ea580c" : "";
+  btn.textContent = smokeCheckMode ? "💨 Clique sur la carte pour vérifier..." : "💨 Vérifier le passage de la fumée";
+  if (map) map.getContainer().style.cursor = smokeCheckMode ? "crosshair" : "";
+});
+
+let countdownTimer;
+function startCountdown(seconds) {
+  clearInterval(countdownTimer);
+  let remaining = seconds;
+  const el = document.getElementById("countdown");
+  const render = () => {
+    const m = Math.floor(remaining / 60), s = remaining % 60;
+    el.textContent = `prochaine actu. dans ${m}:${String(s).padStart(2, "0")}`;
+  };
+  render();
+  countdownTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) { clearInterval(countdownTimer); el.textContent = ""; return; }
+    render();
+  }, 1000);
+}
+
+const STORAGE_KEY = "firemap_firms_key";
+
+function tryLocalStorage() {
+  try {
+    localStorage.setItem("__test__", "1");
+    localStorage.removeItem("__test__");
+    return true;
+  } catch (e) {
+    console.warn("localStorage indisponible :", e);
+    return false;
+  }
+}
+const storageAvailable = tryLocalStorage();
+
+function loadApp(key) {
+  mapKey = key;
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  fetchWind();
+  // Rafraîchit la mesure ponctuelle régulièrement : sans ça, un échec au chargement (ex: quota
+  // Open-Meteo dépassé) laisse lastKnownWind à null pour toute la session, et prive la fumée
+  // de tout repli. Requête légère (1 point), donc un intervalle court ne pose pas de problème.
+  setInterval(fetchWind, 5 * 60 * 1000);
+  initMap();
+  // initMap() pose le fond OSM ; applyBaseLayers() applique ensuite la priorite choisie
+  // (ortho IGN > Sentinel-2 > OSM) et superpose les toponymes si demande.
+  applyBaseLayers();
+  applyShareUrlIfPresent(); // restaure la vue si l'URL contient un lien de partage
+  syncAgeLegend();           // un lien partage peut avoir active une autre palette
+  requestAnimationFrame(async () => {
+    resizeWindCanvas();
+    await attemptFetchWindGrid();
+    startWindAnimation();
+  });
+}
+
+// Tente de charger la grille de vent, et si ça échoue (ex: 429), réessaie périodiquement au lieu
+// d'abandonner pour toute la session — la fumée et l'animation de vent en dépendent.
+let windGridRetryTimer = null;
+async function attemptFetchWindGrid() {
+  try {
+    await fetchWindGrid();
+    showError("");
+    if (windGridRetryTimer) { clearInterval(windGridRetryTimer); windGridRetryTimer = null; }
+    if (allFireRows.length > 0) renderFiresForWindow(); // la fumée dépend du vent, on la recalcule dès qu'il arrive
+  } catch (e) {
+    console.error("Échec chargement grille vent :", e);
+    showError("Grille de vent indisponible (" + e.message + ") — la mesure ponctuelle et les prochaines tentatives automatiques prennent le relais.");
+    if (!windGridRetryTimer) {
+      windGridRetryTimer = setInterval(async () => {
+        try {
+          await fetchWindGrid();
+          console.log("Grille de vent récupérée après une nouvelle tentative.");
+          showError("");
+          clearInterval(windGridRetryTimer);
+          windGridRetryTimer = null;
+          if (allFireRows.length > 0) renderFiresForWindow();
+        } catch (e2) {
+          console.warn("Nouvelle tentative de grille vent toujours en échec :", e2.message);
+        }
+      }, 10 * 60 * 1000);
+    }
+  }
+}
+
+document.getElementById("key-input").addEventListener("input", (e) => {
+  document.getElementById("submit-btn").disabled = !e.target.value.trim();
+});
+
+document.getElementById("submit-btn").addEventListener("click", () => {
+  const key = document.getElementById("key-input").value.trim();
+  if (!key) return;
+  if (storageAvailable && document.getElementById("remember-key").checked) {
+    localStorage.setItem(STORAGE_KEY, key);
+  }
+  loadApp(key);
+});
+
+document.getElementById("forget-key-link").addEventListener("click", () => {
+  if (storageAvailable) localStorage.removeItem(STORAGE_KEY);
+  document.getElementById("key-input").value = "";
+  document.getElementById("submit-btn").disabled = true;
+  document.getElementById("forget-key-link").style.display = "none";
+});
+
+document.getElementById("change-key-btn").addEventListener("click", () => {
+  location.reload();
+});
+
+// Au chargement : on teste d'abord si le serveur relaie FIRMS avec sa propre cle. Si oui,
+// l'ecran de saisie est inutile et on demarre directement — c'est ce qui permet de partager
+// le site sans imposer a chaque visiteur de creer un compte NASA.
+detectFirmsProxy().then(available => {
+  if (available) {
+    loadApp(null); // aucune cle cote client : tous les appels FIRMS passent par le serveur
+    return;
+  }
+  startWithStoredKey();
+});
+
+// Au chargement de la page : si une clé est déjà enregistrée, on pré-remplit
+// et on démarre automatiquement (c'est le but demandé : ne plus la retaper).
+function startWithStoredKey() {
+if (storageAvailable) {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    document.getElementById("key-input").value = saved;
+    document.getElementById("submit-btn").disabled = false;
+    document.getElementById("forget-key-link").style.display = "block";
+    loadApp(saved);
+  }
+} else {
+  document.querySelector('label[for="remember-key"]') || null;
+  document.getElementById("remember-key").disabled = true;
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.style.marginTop = "-4px";
+  note.textContent = "⚠️ Stockage local indisponible dans ce navigateur — la clé devra être retapée à chaque ouverture.";
+  document.getElementById("remember-key").closest("label").after(note);
+}
+}
+
+document.getElementById("refresh-btn").addEventListener("click", fetchFires);
+</script>
+</body>
+</html>
