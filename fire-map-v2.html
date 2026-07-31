@@ -157,6 +157,20 @@
     justify-content: center;
   }
   #compass.hidden { display: none; }
+  details.help { margin-top: 4px; }
+  details.help > summary {
+    cursor: pointer;
+    font-size: 10px;
+    color: #64748b;
+    list-style: none;
+    user-select: none;
+    padding: 1px 0;
+  }
+  details.help > summary::-webkit-details-marker { display: none; }
+  details.help > summary::before { content: "\24D8  "; }
+  details.help > summary:hover { color: #94a3b8; }
+  details.help[open] > summary::before { content: "\24D8  "; }
+  details.help > p.muted { margin-top: 4px; }
   #stats-bar {
     position: absolute;
     left: 50%;
@@ -374,6 +388,12 @@
   <div id="error-banner"></div>
   <div id="body-layout">
     <aside id="sidebar">
+      <div class="panel" style="padding-top:8px;padding-bottom:8px">
+        <label class="toggle-row" style="font-size:11px">
+          <input type="checkbox" id="toggle-all-help" />
+          Afficher toutes les explications
+        </label>
+      </div>
       <div class="panel">
         <h3>Détections</h3>
         <div id="stats-content" class="muted">Chargement…</div>
@@ -465,6 +485,11 @@
           ⚪ Événements feu (regroupement)
         </label>
         <p class="muted" style="margin-top:6px">Regroupe les détections proches (≤2500 m, ≥3 points) en un seul événement, comme sur GISFire — reproduit en JavaScript côté navigateur.</p>
+        <label class="toggle-row" style="margin-top:10px;font-size:11px">
+          <input type="checkbox" id="toggle-burned-footprint" />
+          🟥 Zone brûlée estimée (calculée)
+        </label>
+        <p class="muted" style="margin-top:6px">Empreinte cumulative des 15 derniers jours : une zone qui a brûlé le reste, elle ne disparaît donc pas quand on déplace le curseur de la frise. Chaque détection couvre 375 m (VIIRS) ou 1 km (MODIS), et les passages répétés sur un même terrain sont fusionnés. Disponible immédiatement, mais bien plus grossière qu'un relevé de terrain : ce sont des pixels chauds, pas un contour mesuré. Pour un périmètre précis, utilise le calque EFFIS. Le chargement prend quelques secondes à la première activation.</p>
         <label class="toggle-row" style="margin-top:10px;font-size:11px">
           <input type="checkbox" id="toggle-progression-colors" />
           🎨 Progression du feu (5 paliers)
@@ -956,7 +981,7 @@ const PLANES_HISTORY_URL = "https://raw.githubusercontent.com/yann4023/fire-map-
 let mergedTsByHex = new Map(); // hex -> Set de ts deja stockes
 
 function mergeSnapshotIntoHistory(ts, aircraftList) {
-  const cutoff = Date.now() - 49 * 3600 * 1000;
+  const cutoff = Date.now() - 48 * 3600 * 1000; // 48 h : meme retention que le serveur
   if (ts < cutoff) return;
   const touchedHexes = new Set();
 
@@ -2551,6 +2576,10 @@ document.getElementById("toggle-clouds").addEventListener("change", (e) => {
 // La doc EFFIS précise qu'un paramètre TIME est requis pour ces calques (contrairement aux
 // couches statiques type zones protégées ou Corine Land Cover) — on le cale sur la date du curseur.
 const EFFIS_WMS_URL = "https://maps.effis.emergency.copernicus.eu/effis";
+// Web Mercator identique a EPSG:3857, mais annonce sous son ancien code EPSG:900913 — seul
+// nom reconnu par le serveur EFFIS. Aucun calcul ne change, uniquement l'etiquette envoyee.
+const EFFIS_CRS_900913 = L.extend({}, L.CRS.EPSG3857, { code: "EPSG:900913" });
+const EFFIS_BA_LAYERS = "modis.ba.poly,effis.nrt.ba.poly";
 const EFFIS_ATTRIBUTION = "© EFFIS / Copernicus EMS — Commission européenne, JRC";
 let rasterOpacity = 0.7;
 let effisBaLayer = null, effisFwiLayer = null;
@@ -2579,7 +2608,11 @@ function buildEffisLayer(layerName, dateStr, zIndex, onFallbackNeeded, useEpsg43
     attribution: EFFIS_ATTRIBUTION,
     zIndex: zIndex // empilement explicite : ne dépend plus de l'ordre d'ajout des calques
   };
-  if (useEpsg4326) opts.crs = L.CRS.EPSG4326;
+  // Le GetCapabilities du serveur EFFIS annonce : epsg:4326, epsg:3035 et EPSG:900913.
+  // EPSG:3857 n'y figure PAS — pourtant 900913 designe exactement la meme projection Web
+  // Mercator (c'est son ancien code, herite de Google). Les coordonnees calculees par Leaflet
+  // sont donc valables telles quelles : il suffit d'annoncer le code que le serveur reconnait.
+  opts.crs = useEpsg4326 ? L.CRS.EPSG4326 : EFFIS_CRS_900913;
 
   const layer = L.tileLayer.wms(EFFIS_WMS_URL, opts);
   let handled = false;
@@ -2622,10 +2655,13 @@ function updateEffisLayersForTimeline() {
   if (effisBaEnabled) {
     if (!effisBaLayer || dateChanged) {
       if (effisBaLayer) map.removeLayer(effisBaLayer);
-      effisBaLayer = buildEffisLayer("modis.ba.poly", dateStr, 210, () => {
+      // Deux calques superposes, tous deux confirmes dans le GetCapabilities : la saison
+      // courante (modis.ba.poly) et la version temps quasi reel (effis.nrt.ba.poly), plus
+      // a jour pour les feux en cours. Le WMS accepte une liste separee par des virgules.
+      effisBaLayer = buildEffisLayer(EFFIS_BA_LAYERS, dateStr, 210, () => {
         if (effisBaLayer) map.removeLayer(effisBaLayer);
         effisBa4326 = true;
-        effisBaLayer = buildEffisLayer("modis.ba.poly", dateStr, 210, null, true);
+        effisBaLayer = buildEffisLayer(EFFIS_BA_LAYERS, dateStr, 210, null, true);
         effisBaLayer.addTo(map);
       }, effisBa4326);
       effisBaLayer.addTo(map);
@@ -2671,6 +2707,34 @@ document.getElementById("raster-opacity").addEventListener("input", (e) => {
   [cloudsLayer, effisBaLayer, effisFwiLayer].forEach(l => { if (l) l.setOpacity(rasterOpacity); });
 });
 
+// --- Repliage automatique des textes explicatifs --------------------------------------------
+// Les panneaux comportent beaucoup de texte de contexte, utile a la premiere lecture mais
+// encombrant a l'usage. Plutot que de modifier chaque bloc HTML a la main, on replie ici tout
+// paragraphe explicatif dans un menu deroulant ferme par defaut.
+// Sont volontairement EXCLUS : les paragraphes portant un id (valeurs vivantes comme l'indice
+// de qualite de l'air) et les textes tres courts, qui sont des libelles et non des explications.
+const HELP_MIN_LENGTH = 60;
+
+function collapseHelpTexts() {
+  document.querySelectorAll(".panel p.muted").forEach(p => {
+    if (p.id) return;                                   // contenu dynamique : ne pas masquer
+    if (p.closest("details")) return;                   // deja replie
+    if ((p.textContent || "").trim().length < HELP_MIN_LENGTH) return;
+
+    const details = document.createElement("details");
+    details.className = "help";
+    const summary = document.createElement("summary");
+    summary.textContent = "Explication";
+    details.appendChild(summary);
+    p.parentNode.insertBefore(details, p);
+    details.appendChild(p);
+  });
+}
+
+document.getElementById("toggle-all-help").addEventListener("change", (e) => {
+  document.querySelectorAll("details.help").forEach(d => { d.open = e.target.checked; });
+});
+
 // --- Partage par URL : encode la vue (position, zoom, calques actifs, position de la frise)
 // dans le fragment d'URL. Le fragment n'est jamais envoyé au serveur, donc aucune donnée ne fuite
 // côté réseau — c'est juste un lien à copier/coller.
@@ -2680,7 +2744,7 @@ const SHAREABLE_TOGGLES = [
   "toggle-effis-ba", "toggle-effis-fwi", "toggle-compass", "toggle-wind-probe",
   "toggle-s2cloudless", "toggle-ign-ortho", "toggle-labels",
   "toggle-progression-colors", "toggle-mtg-imagery", "toggle-stats-bar",
-  "toggle-aqi-probe"
+  "toggle-aqi-probe", "toggle-all-help", "toggle-burned-footprint"
 ];
 
 function buildShareUrl() {
@@ -2775,11 +2839,7 @@ async function fetchFires() {
       showError(`Attention : ${failures.length}/${FIRMS_SOURCES.length} source(s) FIRMS ont échoué (${failures.join(" ; ")}). Les autres se sont bien chargées.`);
     }
 
-    allRows.forEach(r => {
-      const hh = (r.acq_time || "0000").padStart(4, "0").slice(0, 2);
-      const mm = (r.acq_time || "0000").padStart(4, "0").slice(2, 4);
-      r.__ts = Date.parse(`${r.acq_date}T${hh}:${mm}:00Z`);
-    });
+    allRows.forEach(computeRowTimestamp);
     allFireRows = allRows.filter(r => r.latitude && r.longitude && !isNaN(r.__ts));
 
     setupTimeline(allFireRows);
@@ -2871,6 +2931,175 @@ function syncAgeLegend() {
   }
 }
 
+// --- Zone brulee estimee, calculee depuis les detections ------------------------------------
+// Chaque detection satellite represente un pixel au sol (375 m pour VIIRS, 1 km pour MODIS).
+// On projette ces pixels sur une grille a la resolution du capteur : les cellules deviennent
+// jointives et forment une empreinte continue, sans double comptage des passages repetes.
+// C'est volontairement la MEME grille que celle du bandeau de statistiques, pour que la surface
+// affichee corresponde exactement a la zone dessinee.
+let burnedFootprintEnabled = false;
+let burnedFootprintLayers = [];
+
+// Grille unique pour toutes les sources : sans cela, VIIRS (375 m) et MODIS (1 km) formeraient
+// deux quadrillages decales dont les bords se croiseraient, produisant un contour en dents de
+// scie. On ramene donc tout sur une grille de 375 m, une detection MODIS marquant simplement
+// toutes les cellules couvertes par son pixel d'1 km.
+const FOOTPRINT_CELL_M = 375;
+
+// --- Historique 15 jours pour la zone brulee -------------------------------------------------
+// Une zone brulee le reste : l'empreinte doit donc etre CUMULATIVE, et non limitee a la fenetre
+// de la frise (48 h au maximum). On charge cet historique separement, pour ne pas etendre la
+// frise chronologique elle-meme a 15 jours.
+// FIRMS plafonne chaque requete a 10 jours ; on couvre donc la periode en deux appels par
+// source, le second avec une date de debut explicite.
+// Horodatage d'une detection FIRMS a partir de acq_date + acq_time ("HHMM", en UTC).
+// Utilise a la fois par le chargement principal et par l'historique des zones brulees :
+// sans lui, les lignes de l'historique n'auraient pas de date et seraient toutes purgees.
+function computeRowTimestamp(r) {
+  const t = (r.acq_time || "0000").padStart(4, "0");
+  r.__ts = Date.parse(`${r.acq_date}T${t.slice(0, 2)}:${t.slice(2, 4)}:00Z`);
+  return r;
+}
+
+const BURNED_HISTORY_DAYS = 10;      // retention demandee, et aussi le maximum FIRMS par requete
+const BURNED_REFRESH_MS = 60 * 60 * 1000; // rechargement horaire : purge les detections devenues
+                                          // trop anciennes meme si l'onglet reste ouvert longtemps
+let burnedHistoryRows = [];
+let burnedHistoryLoading = false;
+let burnedRefreshTimer = null;
+
+function firmsUrl(src, days, date) {
+  if (firmsProxyAvailable) {
+    return `${API_BASE}/fires?source=${src}&bbox=${FRANCE_BBOX}&days=${days}` +
+      (date ? `&date=${date}` : "") + `&key=${API_SHARED_KEY}`;
+  }
+  return `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${mapKey}/${src}/${FRANCE_BBOX}/${days}` +
+    (date ? `/${date}` : "");
+}
+
+async function loadBurnedHistory(force = false) {
+  if (burnedHistoryLoading) return;
+  if (burnedHistoryRows.length && !force) return;
+  burnedHistoryLoading = true;
+  showError(`Chargement de l'historique ${BURNED_HISTORY_DAYS} jours des zones brûlées…`);
+  try {
+    // 10 jours tient dans une seule requete par source (plafond de l'API FIRMS).
+    const jobs = FIRMS_SOURCES.map(src => firmsUrl(src, BURNED_HISTORY_DAYS, ""));
+
+    const results = await Promise.allSettled(jobs.map(u =>
+      fetch(u).then(async res => {
+        if (!res.ok) throw new Error(`statut ${res.status}`);
+        const text = await res.text();
+        if (/invalid|error/i.test(text.slice(0, 100))) throw new Error("réponse invalide");
+        return parseCSV(text);
+      })
+    ));
+
+    const rows = [];
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        r.value.forEach(row => rows.push(computeRowTimestamp({ ...row, __source: FIRMS_SOURCES[i] })));
+      }
+    });
+    burnedHistoryRows = rows;
+    const failed = results.filter(r => r.status === "rejected").length;
+    console.log(`Zone brûlée : ${rows.length} détections sur ${BURNED_HISTORY_DAYS} jours ` +
+      `(${failed}/${jobs.length} requête(s) en échec).`);
+    showError(failed === jobs.length
+      ? "Historique des zones brûlées indisponible (toutes les requêtes FIRMS ont échoué)."
+      : "");
+  } catch (e) {
+    console.error("Historique zones brûlées :", e);
+    showError("Historique des zones brûlées indisponible : " + e.message);
+  } finally {
+    burnedHistoryLoading = false;
+    renderBurnedFootprint();
+  }
+}
+
+function renderBurnedFootprint() {
+  // Purge a l'affichage : meme si les donnees ont ete chargees il y a plusieurs heures, tout
+  // ce qui depasse la retention disparait. FIRMS pouvant renvoyer des detections legerement
+  // hors periode, ce filtre garantit la regle des 10 jours quoi qu'il arrive.
+  const cutoff = Date.now() - BURNED_HISTORY_DAYS * 86400000;
+  burnedHistoryRows = burnedHistoryRows.filter(r => !isNaN(r.__ts) && r.__ts >= cutoff);
+  const rows = burnedHistoryRows;
+  burnedFootprintLayers.forEach(l => map.removeLayer(l));
+  burnedFootprintLayers = [];
+  if (!burnedFootprintEnabled) return;
+  if (!rows.length) return;
+
+  // Latitude de reference commune : la grille doit etre rigoureusement identique pour toutes
+  // les detections, sinon les cellules ne se touchent pas exactement et des fentes apparaissent.
+  const refLat = rows.reduce((a, r) => a + parseFloat(r.latitude), 0) / rows.length;
+  const dLat = FOOTPRINT_CELL_M / 111320;
+  const dLon = FOOTPRINT_CELL_M / (111320 * Math.cos(refLat * Math.PI / 180));
+
+  const marked = new Set();
+  rows.forEach(r => {
+    const lat = parseFloat(r.latitude), lon = parseFloat(r.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
+    const isModis = String(r.__source || "").toUpperCase().includes("MODIS");
+    const half = isModis ? SENSOR_CELL_M.MODIS / 2 : SENSOR_CELL_M.VIIRS / 2;
+    const span = Math.max(0, Math.round(half / FOOTPRINT_CELL_M - 0.5));
+    const ci = Math.round(lat / dLat), cj = Math.round(lon / dLon);
+    for (let di = -span; di <= span; di++) {
+      for (let dj = -span; dj <= span; dj++) marked.add(`${ci + di},${cj + dj}`);
+    }
+  });
+  if (!marked.size) return;
+
+  const cellBounds = (i, j) => [
+    [i * dLat - dLat / 2, j * dLon - dLon / 2],
+    [i * dLat + dLat / 2, j * dLon + dLon / 2]
+  ];
+
+  // 1) Remplissage sombre : cellules jointives, sans contour, pour figurer le sol calcine.
+  //    Un seul calque regroupant tous les rectangles evite des milliers d'objets Leaflet.
+  const rings = [];
+  marked.forEach(key => {
+    const [i, j] = key.split(",").map(Number);
+    const b = cellBounds(i, j);
+    rings.push([[b[0][0], b[0][1]], [b[0][0], b[1][1]], [b[1][0], b[1][1]], [b[1][0], b[0][1]]]);
+  });
+  const fill = L.polygon(rings, {
+    stroke: false, fillColor: "#1c1006", fillOpacity: 0.72,
+    pane: "smokePane", interactive: false
+  });
+  fill.addTo(map);
+  burnedFootprintLayers.push(fill);
+
+  // 2) Contour : on ne trace que les cotes SANS cellule voisine. Les aretes internes sont donc
+  //    ignorees et il ne reste que le pourtour de la zone — l'equivalent d'une fusion de
+  //    polygones, sans avoir besoin d'une bibliotheque de geometrie.
+  const segments = [];
+  marked.forEach(key => {
+    const [i, j] = key.split(",").map(Number);
+    const b = cellBounds(i, j);
+    const south = b[0][0], north = b[1][0], west = b[0][1], east = b[1][1];
+    if (!marked.has(`${i + 1},${j}`)) segments.push([[north, west], [north, east]]);
+    if (!marked.has(`${i - 1},${j}`)) segments.push([[south, west], [south, east]]);
+    if (!marked.has(`${i},${j + 1}`)) segments.push([[south, east], [north, east]]);
+    if (!marked.has(`${i},${j - 1}`)) segments.push([[south, west], [north, west]]);
+  });
+  const outline = L.polyline(segments, {
+    color: "#f97316", weight: 1.6, opacity: 0.95,
+    pane: "smokePane", interactive: false
+  });
+  outline.addTo(map);
+  burnedFootprintLayers.push(outline);
+}
+
+document.getElementById("toggle-burned-footprint").addEventListener("change", (e) => {
+  burnedFootprintEnabled = e.target.checked;
+  clearInterval(burnedRefreshTimer);
+  if (burnedFootprintEnabled) {
+    loadBurnedHistory();
+    burnedRefreshTimer = setInterval(() => loadBurnedHistory(true), BURNED_REFRESH_MS);
+  }
+  renderBurnedFootprint();
+});
+
 document.getElementById("toggle-progression-colors").addEventListener("change", (e) => {
   progressionColorsEnabled = e.target.checked;
   syncAgeLegend();
@@ -2927,6 +3156,7 @@ function applyBaseLayers() {
 document.getElementById("toggle-ign-ortho").addEventListener("change", (e) => {
   ignEnabled = e.target.checked;
   applyBaseLayers();
+  collapseHelpTexts(); // replie les textes de contexte des l'ouverture
   syncAgeLegend(); // la legende doit refleter la palette active des le demarrage
 });
 
