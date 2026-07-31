@@ -24,6 +24,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import base64
+import re
 import zipfile
 import io
 import xml.etree.ElementTree as ET
@@ -34,7 +35,7 @@ LON = -0.58
 RADIUS_NM = 150
 
 DATA_FILE = "data/planes_history.json"
-MAX_AGE_SECONDS = 49 * 3600
+MAX_AGE_SECONDS = 48 * 3600  # 48 h de retention : au-dela, les instantanes sont purges a chaque flush
 POLL_SECONDS = 1
 BATCH_SECONDS = 3       # regroupe les commits/push GitHub
 HISTORY_MIN_INTERVAL_SECONDS = 15  # resolution de l'archive disque : 1 point / 15 s au lieu de 1 / s.
@@ -271,16 +272,18 @@ def fetch_eumetsat_fires():
     return result
 
 
-def fetch_firms_csv(source, bbox, days):
+def fetch_firms_csv(source, bbox, days, date=""):
     if not FIRMS_MAP_KEY:
         raise RuntimeError("FIRMS_MAP_KEY non definie (variable d'environnement manquante).")
-    key = f"{source}|{bbox}|{days}"
+    key = f"{source}|{bbox}|{days}|{date}"
     now = time.time()
     hit = _firms_cache.get(key)
     if hit and now - hit["fetched_at"] < FIRMS_CACHE_SECONDS:
         return hit["data"]
 
     url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_MAP_KEY}/{source}/{bbox}/{days}"
+    if date:
+        url += f"/{date}"
     req = urllib.request.Request(url, headers={"User-Agent": "fire-map-collector/1.0"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         csv_text = resp.read().decode("utf-8", errors="replace")
@@ -348,15 +351,20 @@ class Handler(BaseHTTPRequestHandler):
                 source = (params.get("source") or [""])[0]
                 bbox = (params.get("bbox") or [""])[0]
                 days = (params.get("days") or ["2"])[0]
+                # Date de debut optionnelle : FIRMS limite chaque requete a 10 jours, il faut
+                # donc plusieurs appels dates pour couvrir une periode plus longue.
+                date = (params.get("date") or [""])[0]
                 # Liste blanche : evite que l'endpoint serve de relais ouvert vers n'importe
                 # quelle URL FIRMS construite par un tiers.
                 allowed = {"VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"}
-                if source not in allowed or not bbox or not days.isdigit():
+                date_ok = (date == "") or re.fullmatch(r"\d{4}-\d{2}-\d{2}", date)
+                if (source not in allowed or not bbox or not days.isdigit()
+                        or not (1 <= int(days) <= 10) or not date_ok):
                     self.send_response(400)
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     return
-                body = fetch_firms_csv(source, bbox, days).encode("utf-8")
+                body = fetch_firms_csv(source, bbox, days, date).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/csv; charset=utf-8")
                 self.send_header("Access-Control-Allow-Origin", "*")
