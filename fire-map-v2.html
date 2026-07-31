@@ -2961,7 +2961,11 @@ function computeRowTimestamp(r) {
   return r;
 }
 
-const BURNED_HISTORY_DAYS = 10;      // retention demandee, et aussi le maximum FIRMS par requete
+const BURNED_HISTORY_DAYS = 10;      // retention demandee : au-dela, les detections sont purgees
+// Taille maximale acceptee par FIRMS pour une seule requete. La documentation officielle annonce
+// 10 jours, mais le serveur repond 400 au-dela d'une valeur plus basse — d'ou ce decoupage en
+// tranches datees. Ajuster ici si la limite reelle change.
+const FIRMS_MAX_DAYS_PER_REQUEST = 5;
 const BURNED_REFRESH_MS = 60 * 60 * 1000; // rechargement horaire : purge les detections devenues
                                           // trop anciennes meme si l'onglet reste ouvert longtemps
 let burnedHistoryRows = [];
@@ -2983,8 +2987,25 @@ async function loadBurnedHistory(force = false) {
   burnedHistoryLoading = true;
   showError(`Chargement de l'historique ${BURNED_HISTORY_DAYS} jours des zones brûlées…`);
   try {
-    // 10 jours tient dans une seule requete par source (plafond de l'API FIRMS).
-    const jobs = FIRMS_SOURCES.map(src => firmsUrl(src, BURNED_HISTORY_DAYS, ""));
+    // Decoupage de la periode en tranches respectant le plafond de FIRMS. La tranche la plus
+    // recente est demandee SANS date (FIRMS renvoie alors les donnees les plus fraiches
+    // disponibles) ; les tranches anterieures sont datees explicitement.
+    const jobs = [], jobSources = [];
+    FIRMS_SOURCES.forEach(src => {
+      let covered = 0;
+      while (covered < BURNED_HISTORY_DAYS) {
+        const span = Math.min(FIRMS_MAX_DAYS_PER_REQUEST, BURNED_HISTORY_DAYS - covered);
+        if (covered === 0) {
+          jobs.push(firmsUrl(src, span, ""));
+        } else {
+          const start = new Date(Date.now() - (covered + span) * 86400000)
+            .toISOString().slice(0, 10);
+          jobs.push(firmsUrl(src, span, start));
+        }
+        jobSources.push(src);
+        covered += span;
+      }
+    });
 
     const results = await Promise.allSettled(jobs.map(u =>
       fetch(u).then(async res => {
@@ -2998,7 +3019,7 @@ async function loadBurnedHistory(force = false) {
     const rows = [];
     results.forEach((r, i) => {
       if (r.status === "fulfilled") {
-        r.value.forEach(row => rows.push(computeRowTimestamp({ ...row, __source: FIRMS_SOURCES[i] })));
+        r.value.forEach(row => rows.push(computeRowTimestamp({ ...row, __source: jobSources[i] })));
       }
     });
     burnedHistoryRows = rows;
