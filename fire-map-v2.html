@@ -11,6 +11,8 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
+    overflow-x: hidden;   /* garde-fou : aucun element ne peut elargir la page au-dela de l'ecran */
+    max-width: 100vw;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: #0a0e14;
     color: #e2e8f0;
@@ -18,7 +20,7 @@
   /* 100dvh (dynamic viewport height) au lieu de 100vh : sur mobile, 100vh ignore les barres
      du navigateur, qui recouvrent alors le bas de la page — la frise devenait inaccessible.
      La regle 100vh reste en repli pour les navigateurs qui ne connaissent pas dvh. */
-  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; overflow-x: hidden; }
   header {
     display: flex;
     align-items: center;
@@ -57,7 +59,11 @@
     color: #94a3b8;
     flex-wrap: nowrap;
     overflow: hidden;
-    flex-shrink: 0;
+    /* flex-shrink: 1 et min-width: 0 sont indispensables : avec flex-shrink: 0, ce bloc
+       refusait de se reduire et poussait la page plus large que l'ecran, d'ou une bande
+       vide a droite et un contenu decale. */
+    flex-shrink: 1;
+    min-width: 0;
   }
 
   /* Attribution Leaflet : compacte et tronquee plutot que sur plusieurs lignes. */
@@ -466,6 +472,7 @@
   }
   .legend-ticks { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-top: 3px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  #timeline-bar > * { min-width: 0; }
   #timeline-bar {
     position: absolute;
     left: 14px;
@@ -524,7 +531,7 @@
   .ts-btn { padding: 4px 7px; font-size: 11px; background: #1e293b; }
   .ts-btn.active { background: #2563eb; color: #fff; }
   #timeline-slider { flex: 1; accent-color: #f97316; }
-  #timeline-label { flex-shrink: 0; min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
+  #timeline-label { flex-shrink: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
