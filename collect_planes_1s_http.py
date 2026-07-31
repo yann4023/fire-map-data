@@ -37,6 +37,12 @@ DATA_FILE = "data/planes_history.json"
 MAX_AGE_SECONDS = 49 * 3600
 POLL_SECONDS = 1
 BATCH_SECONDS = 3       # regroupe les commits/push GitHub
+HISTORY_MIN_INTERVAL_SECONDS = 15  # resolution de l'archive disque : 1 point / 15 s au lieu de 1 / s.
+                                   # A 1 s, le fichier atteignait 100+ Mo sur 49 h — trop lourd a
+                                   # servir au navigateur, et refuse par GitHub. 15 s suffit
+                                   # largement pour tracer des trajectoires.
+GIT_PUSH_ENABLED = False  # L'archive GitHub n'est plus utilisee : le serveur sert /history
+                          # directement. Le fichier depassait de toute facon la limite de 100 Mo.
 IN_MEMORY_WINDOW_SECONDS = 60  # 1 min de tampon — le client fait son propre historique de session + backfill GitHub, inutile de renvoyer plus
 HTTP_PORT = 8080
 
@@ -308,10 +314,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
         elif path == "/history":
-            # Sert l'archive locale directement : le client n'a plus besoin de passer par
-            # raw.githubusercontent.com, dont la mise a jour depend d'un push qui peut echouer.
+            # Sert l'archive locale, filtree cote serveur : sans ca on enverrait tout le fichier
+            # au navigateur (plus de 100 Mo observes), alors que quelques heures suffisent.
+            # Parametres : ?hours=N (profondeur) et ?step=N (secondes entre deux points).
             try:
-                self._send_json(load_history())
+                params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                hours = float((params.get("hours") or ["6"])[0])
+                step = float((params.get("step") or ["15"])[0])
+                cutoff = time.time() - hours * 3600
+                out, last_ts = [], 0
+                for snap in load_history():
+                    if snap["ts"] < cutoff or snap["ts"] - last_ts < step:
+                        continue
+                    last_ts = snap["ts"]
+                    out.append(snap)
+                print(f"/history : {len(out)} instantanes servis ({hours} h, pas {step} s)")
+                self._send_json(out)
             except Exception as e:
                 print(f"Erreur lecture historique : {e}")
                 self.send_response(500)
@@ -367,6 +385,8 @@ def save_history(history):
 
 
 def git_push():
+    if not GIT_PUSH_ENABLED:
+        return
     subprocess.run(["git", "add", DATA_FILE], check=False)
     result = subprocess.run(["git", "commit", "-m", "Auto update (1s)", "--quiet"], check=False)
     if result.returncode != 0:
@@ -430,7 +450,10 @@ def main():
             aircraft = fetch_planes()
             now = int(time.time())
             snap = make_snapshot(now, aircraft)
-            history.append(snap)
+            # N'archive sur disque qu'un point toutes les HISTORY_MIN_INTERVAL_SECONDS.
+            # La memoire vive garde, elle, la pleine resolution seconde par seconde.
+            if not history or now - history[-1]["ts"] >= HISTORY_MIN_INTERVAL_SECONDS:
+                history.append(snap)
             with lock:
                 recent_snapshots.append(snap)
                 cutoff_mem = now - IN_MEMORY_WINDOW_SECONDS
