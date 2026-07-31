@@ -799,7 +799,7 @@
         </svg>
         <div id="compass-label">—</div>
       </div>
-      <div class="legend-stack" id="legend-box">
+      <div class="legend-stack">
         <details class="legend" id="legend-intensity">
           <summary id="legend-summary">Intensité</summary>
           <div class="legend-gradient-bar"></div>
@@ -1934,11 +1934,6 @@ let timelinePlayTimer = null;
 // pas une confirmation réelle d'extinction — la FRP reste affichée dans le popup.
 const ACTIVE_FIRE_RGB = [255, 122, 0];   // orange vif — actif
 const COOLED_DOWN_RGB = [100, 116, 139]; // gris ardoise neutre — probablement éteint
-
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 // Palette "progression du feu" a 5 paliers, inspiree de RecordPy : jaune vif pour le front
 // actif, puis orange, rouge, rouge sombre et brun pour les terrains refroidis. Chaque palier
