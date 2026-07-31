@@ -186,6 +186,81 @@
     pointer-events: none;
   }
   #stats-bar.hidden { display: none; }
+
+  /* Bouton d'ouverture du tiroir lateral : masque sur grand ecran, visible sur mobile. */
+  #sidebar-toggle {
+    display: none;
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 470;
+    padding: 8px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid #334155;
+  }
+
+  /* ---- Ecrans etroits (telephones, tablettes en portrait) ----
+     La barre laterale passe en tiroir superpose a la carte au lieu de lui voler de la largeur :
+     sur 380 px, une colonne fixe de 260 px ne laisserait presque rien a la carte. */
+  @media (max-width: 820px) {
+    #sidebar-toggle { display: block; }
+    #sidebar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 82%;
+      max-width: 320px;
+      z-index: 480;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: 4px 0 18px rgba(0, 0, 0, 0.5);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #body-layout { position: relative; }
+
+    header { padding: 8px 10px; }
+    header h1 { font-size: 15px; }
+    .meta { font-size: 11px; gap: 6px; }
+
+    /* Le bandeau de stats et la legende se chevauchaient avec le bouton du tiroir. */
+    #stats-bar {
+      top: auto;
+      bottom: 88px;
+      gap: 10px;
+      padding: 6px 10px;
+      max-width: 94vw;
+      overflow-x: auto;
+    }
+    #stats-bar .stat-val { font-size: 13px; }
+    #stats-bar .stat-lbl { font-size: 9px; }
+    .legend { max-width: 46vw; font-size: 10px; }
+    #compass { width: 60px; height: 60px; bottom: 150px; right: 8px; }
+    #compass svg { width: 60px; height: 60px; }
+
+    /* La frise doit rester utilisable au pouce : on autorise le retour a la ligne. */
+    #timeline-bar { flex-wrap: wrap; gap: 6px; padding: 8px; }
+    #timeline-slider { order: 10; flex-basis: 100%; }
+    #timeline-label { min-width: 0; font-size: 10px; }
+    .tw-btn { padding: 6px 9px; }
+  }
+
+  /* ---- Tres petits ecrans : on retire ce qui est secondaire ---- */
+  @media (max-width: 480px) {
+    .ts-btn { display: none; }   /* vitesses de lecture : rarement utiles au doigt */
+    .legend { display: none; }   /* la legende prend trop de place sur un petit ecran */
+    #compass { display: none; }
+  }
+
+  /* ---- Ecrans bas et larges (16/9 en paysage sur mobile) ----
+     La hauteur devient la ressource rare : on comprime les elements verticaux. */
+  @media (max-height: 500px) {
+    header { padding: 4px 10px; }
+    #timeline-bar { padding: 5px 8px; }
+    #stats-bar { padding: 4px 10px; }
+  }
   #stats-bar .stat { display: flex; flex-direction: column; align-items: center; }
   #stats-bar .stat-val { font-size: 15px; font-weight: 600; color: #e2e8f0; }
   #stats-bar .stat-lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -387,6 +462,7 @@
   </header>
   <div id="error-banner"></div>
   <div id="body-layout">
+    <button id="sidebar-toggle" aria-label="Ouvrir ou fermer le panneau des calques">☰ Calques</button>
     <aside id="sidebar">
       <div class="panel" style="padding-top:8px;padding-bottom:8px">
         <label class="toggle-row" style="font-size:11px">
@@ -2738,6 +2814,37 @@ document.getElementById("raster-opacity").addEventListener("input", (e) => {
   rasterOpacity = Number(e.target.value) / 100;
   document.getElementById("raster-opacity-value").textContent = `${e.target.value} %`;
   [cloudsLayer, effisBaLayer, effisFwiLayer].forEach(l => { if (l) l.setOpacity(rasterOpacity); });
+});
+
+// --- Tiroir lateral sur petit ecran ----------------------------------------------------------
+// Sur mobile, la barre laterale se superpose a la carte au lieu de lui prendre de la largeur.
+// Elle se referme apres un choix, sinon elle masquerait le resultat de ce choix.
+const sidebarEl = document.getElementById("sidebar");
+const sidebarToggleEl = document.getElementById("sidebar-toggle");
+
+function isNarrowScreen() {
+  return window.matchMedia("(max-width: 820px)").matches;
+}
+
+sidebarToggleEl.addEventListener("click", () => {
+  sidebarEl.classList.toggle("open");
+});
+
+// Referme le tiroir apres avoir coche une option, pour laisser voir la carte.
+sidebarEl.addEventListener("change", () => {
+  if (isNarrowScreen()) setTimeout(() => sidebarEl.classList.remove("open"), 250);
+});
+
+// Un clic sur la carte referme aussi le tiroir : geste naturel pour revenir a la vue.
+document.getElementById("map").addEventListener("click", () => {
+  if (isNarrowScreen()) sidebarEl.classList.remove("open");
+});
+
+// Retour sur grand ecran : on retire la classe pour que la barre reprenne sa place normale
+// en colonne (sinon elle resterait positionnee en superposition).
+// resizeWindCanvas est deja gere par un autre ecouteur : on ne s'occupe ici que du tiroir.
+window.addEventListener("resize", () => {
+  if (!isNarrowScreen()) sidebarEl.classList.remove("open");
 });
 
 // --- Repliage automatique des textes explicatifs --------------------------------------------
